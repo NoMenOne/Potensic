@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Potensic Atom 3 – waypoint szerkesztő</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root{--bg:#f3f5f2;--pn:#fff;--ink:#1c2a22;--mut:#66756b;--ln:#d5ddd6;--ac:#0a8f4e;--ac2:#06683a;--wa:#c0392b}
+@media(prefers-color-scheme:dark){:root{--bg:#151b17;--pn:#1e2721;--ink:#e6efe8;--mut:#93a499;--ln:#33423a;--ac:#2fd07a;--ac2:#52e08f;--wa:#ff7a6b}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font:14px/1.4 "Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--ink);display:grid;grid-template-columns:1fr 380px}
+#map{height:100%;min-height:50vh}
+aside{background:var(--pn);border-left:1px solid var(--ln);overflow-y:auto;height:100vh;padding:12px 14px}
+h1{font-size:17px;margin:0 0 2px}
+h2{font-size:14px;margin:16px 0 6px;padding-top:10px;border-top:1px solid var(--ln)}
+.sub{color:var(--mut);font-size:12px;margin:0 0 8px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 8px}
+label{display:flex;flex-direction:column;font-size:12px;color:var(--mut);gap:2px}
+label.chk{flex-direction:row;align-items:center;gap:6px;color:var(--ink)}
+input,select,button{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--ln);border-radius:5px;padding:5px 7px;min-width:0}
+input:focus,select:focus,button:focus-visible{outline:2px solid var(--ac);outline-offset:1px}
+button{cursor:pointer;background:var(--pn)}
+button:hover{border-color:var(--ac)}
+button.pri{background:var(--ac);border-color:var(--ac);color:#fff;font-weight:600}
+button.pri:hover{background:var(--ac2)}
+button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
+button.del{color:var(--wa)}
+.tabs{display:flex;gap:4px;margin:10px 0 8px}
+.tabs button{flex:1;padding:7px 4px;font-weight:600}
+.tab{padding:2px 0 0}
+.row{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+.row>*{flex:1}
+ol{list-style:none;margin:0;padding:0;max-height:200px;overflow-y:auto;border:1px solid var(--ln);border-radius:5px}
+li{display:flex;gap:6px;align-items:center;padding:4px 8px;cursor:pointer;border-bottom:1px solid var(--ln)}
+li:last-child{border-bottom:0}
+li.sel{background:var(--ac);color:#fff}
+li b{width:22px}
+li span{flex:1}
+.stat{font-size:12px;color:var(--mut);margin-top:6px}
+.pin{background:var(--ac);color:#fff;border:2px solid #fff;border-radius:50%;width:26px;height:26px;display:grid;place-items:center;font-weight:700;font-size:12px;box-shadow:0 1px 4px #0008}
+.pin.s{background:#e67e22;transform:scale(1.2)}
+.pin.v{width:14px;height:14px;background:#ff9800;font-size:0}
+.pin.h{background:#2563eb;border-radius:6px}
+@media(max-width:800px){body{grid-template-columns:1fr;grid-template-rows:55vh auto;height:auto}aside{height:auto;border-left:0;border-top:1px solid var(--ln)}#map{height:55vh}}
+</style>
+</head>
+<body>
+<div id="map"></div>
+<aside>
+<h1>Potensic Atom 3 – waypoint szerkesztő</h1>
+<div class="row">
+  <input id="q" placeholder="Hely keresése (pl. Gyömrő)" style="flex:2">
+  <button id="go">Keresés</button>
+</div>
+<div class="row">
+  <button id="imp">Fájlok betöltése…</button>
+  <button id="clear" class="del">Mindent töröl</button>
+  <input id="file" type="file" accept=".json" multiple hidden>
+</div>
+
+<div class="tabs" id="tabs">
+  <button data-t="wp" class="on">Waypoint</button>
+  <button data-t="ortho">Ortofotó</button>
+  <button data-t="plan">Tervezett utak</button>
+</div>
+
+<div class="tab" id="tab-wp">
+  <p class="sub">Kattints a térképre új pont felvételéhez. A pontokat húzással mozgathatod.</p>
+  <div class="row"><button id="mHome">Home pont kijelölése</button></div>
+</div>
+
+<div class="tab" id="tab-ortho" hidden>
+  <p class="sub">1. Kattints a térképen a terület sarkaira. 2. Állítsd be az átfedést – a narancs szaggatott vonal élőben mutatja a sorokat és a fotópontokat. 3. Nyomd meg az „Útvonal generálása” gombot. Sarok törlése: jobb klikk / hosszú nyomás.</p>
+  <div class="row">
+    <button id="oDraw">Terület rajzolása</button>
+    <button id="oClr" class="del">Terület törlése</button>
+  </div>
+  <div class="grid" id="oform"></div>
+  <div class="row">
+    <button id="oAuto">Irány: leghosszabb oldal</button>
+    <button id="oGen" class="pri">Útvonal generálása</button>
+  </div>
+  <div class="stat" id="ostat"></div>
+</div>
+
+<div class="tab" id="tab-plan" hidden>
+  <p class="sub"><b>Körberepülés:</b> kattints a térképre a megfigyelt pont kijelöléséhez (húzással áthelyezhető). A drón e pont körül repül körbe.</p>
+  <div class="grid" id="rform"></div>
+  <div class="row">
+    <button id="rClr" class="del">Pont törlése</button>
+    <button id="rGen" class="pri">Útvonal generálása</button>
+  </div>
+  <div class="stat" id="rstat"></div>
+</div>
+
+<h2>Globális beállítások (global.json)</h2>
+<div class="grid" id="gform"></div>
+
+<h2>Útvonal</h2>
+<ol id="list"></ol>
+<div class="row">
+  <button id="up">▲ Fel</button><button id="dn">▼ Le</button><button id="rm" class="del">Pont törlése</button>
+</div>
+<div class="stat" id="stat"></div>
+
+<h2>Kijelölt waypoint adatai</h2>
+<div class="grid" id="wform"></div>
+<div class="row">
+  <button id="allH">Magasság → mind</button>
+  <button id="allS">Sebesség → mind</button>
+</div>
+
+<h2>Home pont (a fájl második tömbje)</h2>
+<div class="grid" id="hform"></div>
+<p class="sub" id="hnote"></p>
+
+<h2>Mentés</h2>
+<label>Küldetésfájl neve
+  <input id="fname">
+</label>
+<p class="sub">Egy <b>task_…</b> mappa jön létre, benne: <b>global.json</b>, a küldetésfájl és a <b>task_….jpeg</b> előnézeti kép (1920×1080).</p>
+<div class="row">
+  <button id="dlZ" class="pri">Mappa letöltése (ZIP)</button>
+  <button id="dlD" class="pri" hidden>Mentés mappába</button>
+</div>
+<div class="stat" id="msg"></div>
+</aside>
+
+<datalist id="actions"><option value="NONE"><option value="START_RECORD"></datalist>
+<datalist id="gimbalTypes"><option value="DEFINE"></datalist>
+<datalist id="speedTypes"><option value="GLOBAL"></datalist>
+<datalist id="yawTypes"><option value="TO_WAYPOINT"></datalist>
+<datalist id="zoomTypes"><option value="HAND"></datalist>
+<datalist id="finish"><option value="BACK"></datalist>
+<datalist id="lost"><option value="RETURN"></datalist>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+// [kulcs, címke, típus (f=lebegőpontos, i=egész, s=szöveg, b=logikai), datalist]
+const WF=[
+ ['action','Művelet','s','actions'],['height','Magasság (m)','f'],
+ ['lat','Szélesség','f'],['lng','Hosszúság','f'],
+ ['hoverTime','Lebegés (s)','i'],['speed','Sebesség (m/s)','f'],
+ ['speedType','Sebesség típusa','s','speedTypes'],['gimbalPitch','Gimbal dőlés (°)','i'],
+ ['gimbalType','Gimbal típusa','s','gimbalTypes'],['yaw','Yaw (°)','i'],
+ ['yawType','Yaw típusa','s','yawTypes'],['zoomRatio','Zoom','f'],
+ ['zoomType','Zoom típusa','s','zoomTypes'],['poiType','POI típus','i'],
+ ['poiLat','POI szélesség','f'],['poiLng','POI hosszúság','f'],['poiHeight','POI magasság','f']
+];
+const GF=[
+ ['finishAction','Végén','s','finish'],['lostAction','Jelvesztéskor','s','lost'],
+ ['speed','Sebesség (m/s)','f'],['globalHeight','Globális magasság','n'],
+ ['globalHeightType','Magasság típusa','i'],['isOrder','Sorrendben (isOrder)','b']
+];
+const HF=[['height','Magasság (m)','f'],['lat','Szélesség','f'],['lng','Hosszúság','f']];
+const GTYPES={finishAction:'s',lostAction:'s',speed:'f',globalHeight:'i',globalHeightType:'i',isOrder:'b'};
+
+let wps=[],home=null,sel=-1,homeMode=false;
+let glob={finishAction:'BACK',globalHeight:0,globalHeightType:0,isOrder:true,lostAction:'RETURN',speed:5.0};
+
+const $=id=>document.getElementById(id);
+const map=L.map('map').setView([47.3055,19.4735],16);
+const sat=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Esri World Imagery'}).addTo(map);
+const osm=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'});
+L.control.layers({'Műhold':sat,'Térkép':osm}).addTo(map);
+const line=L.polyline([],{color:'#2fd07a',weight:4}).addTo(map);
+let markers=[],homeMarker=null;
+
+function newWp(lat,lng){
+  const last=wps[wps.length-1];
+  return {action:wps.length?'NONE':'START_RECORD',gimbalPitch:last?last.gimbalPitch:0,gimbalType:'DEFINE',
+    height:last?(wps.length==1?50:last.height):40,hoverTime:0,lat,lng,poiHeight:50,poiLat:0,poiLng:0,poiType:0,
+    speed:last?last.speed:glob.speed,speedType:'GLOBAL',yaw:0,yawType:'TO_WAYPOINT',zoomRatio:1,zoomType:'HAND'};
+}
+function pin(txt,cls){return L.divIcon({className:'',html:`<div class="pin ${cls}">${txt}</div>`,iconSize:[26,26],iconAnchor:[13,13]})}
+
+map.on('click',e=>{
+  const {lat,lng}=e.latlng;
+  if(tab=='plan'){ocen={lat,lng};drawOrbit();return}
+  if(tab=='ortho'){if(polyMode){poly.push({lat,lng});drawPoly()}return}
+  if(homeMode){home={height:home?home.height:50,lat,lng};homeMode=false;$('mHome').classList.remove('on');drawAll();return}
+  wps.push(newWp(lat,lng));sel=wps.length-1;drawAll();
+});
+
+function drawAll(){
+  markers.forEach(m=>m.remove());markers=[];
+  wps.forEach((w,i)=>{
+    const m=L.marker([w.lat,w.lng],{draggable:true,icon:pin(i+1,i==sel?'s':'')}).addTo(map);
+    m.on('click',()=>{sel=i;drawAll()});
+    m.on('drag',e=>{const p=e.target.getLatLng();w.lat=p.lat;w.lng=p.lng;line.setLatLngs(wps.map(x=>[x.lat,x.lng]))});
+    m.on('dragend',()=>{sel=i;drawAll()});
+    markers.push(m);
+  });
+  if(homeMarker){homeMarker.remove();homeMarker=null}
+  if(home){
+    homeMarker=L.marker([home.lat,home.lng],{draggable:true,icon:pin('H','h')}).addTo(map);
+    homeMarker.on('dragend',e=>{const p=e.target.getLatLng();home.lat=p.lat;home.lng=p.lng;drawForms()});
+  }
+  line.setLatLngs(wps.map(x=>[x.lat,x.lng]));
+  drawList();drawForms();
+}
+
+function drawList(){
+  const ol=$('list');ol.innerHTML='';
+  if(!wps.length){ol.innerHTML='<li style="cursor:default;color:var(--mut)">Még nincs pont – kattints a térképre.</li>'}
+  wps.forEach((w,i)=>{
+    const li=document.createElement('li');if(i==sel)li.className='sel';
+    li.innerHTML=`<b>${i+1}</b><span>${w.action}</span><span>${w.height} m</span><span>${w.speed} m/s</span>`;
+    li.onclick=()=>{sel=i;drawAll();map.panTo([w.lat,w.lng])};
+    ol.appendChild(li);
+  });
+  let d=0;for(let i=1;i<wps.length;i++)d+=map.distance([wps[i-1].lat,wps[i-1].lng],[wps[i].lat,wps[i].lng]);
+  const t=glob.speed>0?d/glob.speed:0;
+  $('stat').textContent=wps.length?`${wps.length} pont · ${Math.round(d)} m · kb. ${Math.floor(t/60)} perc ${Math.round(t%60)} mp (a visszatérés nélkül)`:'';
+}
+
+function field(list,obj,def,onchg){
+  const f=def[2],el=document.createElement('label');
+  if(f=='b'){
+    el.className='chk';el.innerHTML=`<input type="checkbox"> ${def[1]}`;
+    const i=el.querySelector('input');i.checked=!!obj[def[0]];
+    i.onchange=()=>{obj[def[0]]=i.checked;onchg&&onchg()};return el;
+  }
+  el.innerHTML=`${def[1]}<input ${f=='s'?'':'type="number" step="any"'} ${def[3]?`list="${def[3]}"`:''}>`;
+  const i=el.querySelector('input');i.value=obj[def[0]];
+  i.oninput=()=>{
+    if(f=='s'){obj[def[0]]=i.value}
+    else{const v=parseFloat(i.value);if(isNaN(v))return;obj[def[0]]=f=='i'?Math.round(v):v}
+    onchg&&onchg();
+  };
+  return el;
+}
+function drawForms(){
+  const g=$('gform');g.innerHTML='';
+  GF.forEach(d=>g.appendChild(field(g,glob,d,drawList)));
+  const w=$('wform');w.innerHTML='';
+  if(sel>=0&&wps[sel]){
+    WF.forEach(d=>w.appendChild(field(w,wps[sel],d,()=>{
+      markers[sel].setLatLng([wps[sel].lat,wps[sel].lng]);
+      line.setLatLngs(wps.map(x=>[x.lat,x.lng]));drawList();
+    })));
+  }else w.innerHTML='<p class="sub" style="grid-column:1/3">Válassz ki egy pontot a listában vagy a térképen.</p>';
+  const o=$('oform');o.innerHTML='';OF.forEach(d=>o.appendChild(field(o,og,d,ostat)));ostat();
+  const rr=$('rform');rr.innerHTML='';RF.forEach(d=>rr.appendChild(field(rr,rg,d,ostat2)));ostat2();
+  const h=$('hform');h.innerHTML='';
+  const hh=home||(wps[0]?{height:50,lat:wps[0].lat,lng:wps[0].lng}:null);
+  if(home)HF.forEach(d=>h.appendChild(field(h,home,d,()=>{homeMarker&&homeMarker.setLatLng([home.lat,home.lng])})));
+  $('hnote').textContent=home?'':'Nincs Home pont megadva – mentéskor az 1. waypoint helye lesz (50 m). Kijelölheted fent.';
+}
+
+// Gombok
+$('mHome').onclick=()=>{homeMode=!homeMode;$('mHome').classList.toggle('on',homeMode)};
+$('clear').onclick=()=>{if(confirm('Biztosan törlöd az összes pontot?')){wps=[];home=null;sel=-1;drawAll()}};
+$('rm').onclick=()=>{if(sel<0)return;wps.splice(sel,1);sel=Math.min(sel,wps.length-1);drawAll()};
+$('up').onclick=()=>{if(sel>0){[wps[sel-1],wps[sel]]=[wps[sel],wps[sel-1]];sel--;drawAll()}};
+$('dn').onclick=()=>{if(sel>=0&&sel<wps.length-1){[wps[sel+1],wps[sel]]=[wps[sel],wps[sel+1]];sel++;drawAll()}};
+$('allH').onclick=()=>{if(sel<0)return;const v=wps[sel].height;wps.forEach(w=>w.height=v);drawAll()};
+$('allS').onclick=()=>{if(sel<0)return;const v=wps[sel].speed;wps.forEach(w=>w.speed=v);glob.speed=v;drawAll()};
+$('go').onclick=async()=>{
+  const q=$('q').value.trim();if(!q)return;
+  try{
+    const r=await (await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(q))).json();
+    if(r[0])map.setView([+r[0].lat,+r[0].lon],17);else alert('Nem található.');
+  }catch(e){alert('A keresés nem sikerült (kell internet).')}
+};
+$('q').onkeydown=e=>{if(e.key=='Enter')$('go').click()};
+
+// Betöltés
+$('imp').onclick=()=>$('file').click();
+$('file').onchange=async e=>{
+  for(const f of e.target.files){
+    try{
+      const t=(await f.text()).trim();
+      if(t[0]=='{'){Object.assign(glob,JSON.parse(t))}
+      else{
+        const i=t.indexOf('];[');
+        if(i<0){wps=JSON.parse(t)}
+        else{wps=JSON.parse(t.slice(0,i+1));const h=JSON.parse(t.slice(i+2));home=h[0]||null}
+        $('fname').value=f.name;
+      }
+    }catch(err){alert(f.name+': nem olvasható ('+err.message+')')}
+  }
+  e.target.value='';sel=wps.length?0:-1;drawAll();
+  if(wps.length)map.fitBounds(L.latLngBounds(wps.map(w=>[w.lat,w.lng])),{padding:[40,40]});
+};
+
+// Ortofotó
+const OF=[['alt','Repülési magasság (m)','f'],['speed','Sebesség (m/s)','f'],['front','Előre átfedés (%)','f'],['side','Oldalsó átfedés (%)','f'],
+ ['angle','Sorok iránya (°, É=0)','f'],['pitch','Gimbal dőlés (°)','i'],['fov','Átlós látószög (°)','f'],['photoAction','Fotó művelet neve','s'],
+ ['pw','Kép szélesség (px)','i'],['ph','Kép magasság (px)','i'],['allPts','Waypoint minden fotóponton','b']];
+const og={alt:60,speed:5,front:75,side:70,angle:0,pitch:-90,fov:84,photoAction:'',pw:8192,ph:6144,allPts:true};
+let poly=[],polyMode=false,pm=[];
+const prev=L.layerGroup().addTo(map);
+const polyLayer=L.polygon([],{color:'#ff9800',weight:3,fillOpacity:.12}).addTo(map);
+function drawPoly(){
+  pm.forEach(m=>m.remove());pm=[];
+  poly.forEach((p,i)=>{
+    const m=L.marker([p.lat,p.lng],{draggable:true,icon:pin('','v')}).addTo(map);
+    m.on('drag',e=>{const q=e.target.getLatLng();p.lat=q.lat;p.lng=q.lng;polyLayer.setLatLngs(poly.map(x=>[x.lat,x.lng]));ostat()});
+    m.on('contextmenu',()=>{poly.splice(i,1);drawPoly()});
+    pm.push(m);
+  });
+  polyLayer.setLatLngs(poly.map(x=>[x.lat,x.lng]));ostat();
+}
+function plan(){
+  if(poly.length<3)return null;
+  const lat0=poly.reduce((s,p)=>s+p.lat,0)/poly.length,lng0=poly.reduce((s,p)=>s+p.lng,0)/poly.length;
+  const kE=111320*Math.cos(lat0*Math.PI/180),kN=110540;
+  const th=og.angle*Math.PI/180,u=[Math.sin(th),Math.cos(th)],v=[Math.cos(th),-Math.sin(th)];
+  const P=poly.map(p=>{const e=(p.lng-lng0)*kE,n=(p.lat-lat0)*kN;return[e*u[0]+n*u[1],e*v[0]+n*v[1]]});
+  const dh=2*og.alt*Math.tan(og.fov/2*Math.PI/180),diag=Math.hypot(og.pw,og.ph);
+  const Wg=dh*Math.max(og.pw,og.ph)/diag,Hg=dh*Math.min(og.pw,og.ph)/diag; // sorra merőleges / sor menti lefedés
+  const d0=Wg*(1-og.side/100),ps=Hg*(1-og.front/100);
+  if(!(d0>0&&ps>0&&og.alt>0))return null;
+  const bs=P.map(q=>q[1]),b0=Math.min(...bs),b1=Math.max(...bs);
+  const n=Math.max(1,Math.ceil((b1-b0)/d0)),d=(b1-b0)/n,segs=[];
+  for(let k=0;k<n;k++){
+    const b=b0+d/2+k*d,xs=[];
+    for(let i=0;i<P.length;i++){const A=P[i],B=P[(i+1)%P.length];
+      if((A[1]<=b&&b<B[1])||(B[1]<=b&&b<A[1]))xs.push(A[0]+(b-A[1])/(B[1]-A[1])*(B[0]-A[0]))}
+    xs.sort((x,y)=>x-y);
+    const row=[];for(let i=0;i+1<xs.length;i+=2)row.push([xs[i]-ps,xs[i+1]+ps,b]);
+    if(k%2)row.reverse().forEach(r=>segs.push([r[1],r[0],r[2]]));else row.forEach(r=>segs.push(r));
+  }
+  const pts=[];let photos=0;
+  segs.forEach(sg=>{
+    const len=Math.abs(sg[1]-sg[0]),m=Math.max(1,Math.ceil(len/ps));photos+=m+1;
+    if(og.photoAction||og.allPts)for(let j=0;j<=m;j++)pts.push([sg[0]+(sg[1]-sg[0])*j/m,sg[2]]);
+    else pts.push([sg[0],sg[2]],[sg[1],sg[2]]);
+  });
+  let dist=0;for(let i=1;i<pts.length;i++)dist+=Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]);
+  const ll=pts.map(q=>{const e=q[0]*u[0]+q[1]*v[0],nn=q[0]*u[1]+q[1]*v[1];return[lat0+nn/kN,lng0+e/kE]});
+  return{ll,n,Wg,Hg,d:d,ps,photos,dist,gsd:Wg/Math.max(og.pw,og.ph)*100};
+}
+function ostat(){
+  const r=plan(),el=$('ostat');if(!el)return;
+  prev.clearLayers();
+  if(r&&tab=='ortho'){L.polyline(r.ll,{color:'#ff9800',weight:2,dashArray:'6 6',interactive:false}).addTo(prev);
+    if(r.ll.length<=400)r.ll.forEach(q=>L.circleMarker(q,{radius:3,color:'#ff9800',weight:1,fillOpacity:1,interactive:false}).addTo(prev))}
+  if(!r){el.textContent=polyMode?'Rajzolás be van kapcsolva: kattints a terület sarkaira (legalább 3).':poly.length?'Legalább 3 sarok kell, és az átfedésnek 100% alatt kell lennie.':'';return}
+  const t=r.dist/og.speed;
+  el.innerHTML=`Terep-felbontás: <b>${r.gsd.toFixed(2)} cm/px</b> · egy kép lefedése ${r.Wg.toFixed(0)}×${r.Hg.toFixed(0)} m<br>`+
+   `${r.n} sor, sortávolság ${r.d.toFixed(1)} m, fotótávolság ${r.ps.toFixed(1)} m<br>`+
+   `~${r.photos} fotó · útvonal ${Math.round(r.dist)} m · kb. ${Math.floor(t/60)} perc ${Math.round(t%60)} mp<br>`+
+   `Fotóköz ${(r.ps/og.speed).toFixed(1)} s ennél a sebességnél; 2 s-os időzítéshez max. ${(r.ps/2).toFixed(1)} m/s<br>`+
+   `${r.ll.length} waypoint lesz`+(og.alt>120?' <b style="color:var(--wa)">· 120 m fölötti magasság!</b>':'')+(t>1800?' <b style="color:var(--wa)">· hosszú, ellenőrizd az akkut!</b>':'');
+}
+function setOdraw(){$('oDraw').classList.toggle('on',polyMode);$('oDraw').textContent=polyMode?'Rajzolás kész':'Terület rajzolása'}
+$('oDraw').onclick=()=>{polyMode=!polyMode;setOdraw();ostat()};
+$('oClr').onclick=()=>{poly=[];drawPoly()};
+$('oAuto').onclick=()=>{
+  if(poly.length<3)return;
+  const kE=111320*Math.cos(poly[0].lat*Math.PI/180),kN=110540;let best=0,ang=0;
+  poly.forEach((p,i)=>{const q=poly[(i+1)%poly.length],e=(q.lng-p.lng)*kE,n=(q.lat-p.lat)*kN,l=Math.hypot(e,n);
+    if(l>best){best=l;ang=(Math.atan2(e,n)*180/Math.PI+360)%180}});
+  og.angle=Math.round(ang*10)/10;drawForms();
+};
+$('oGen').onclick=()=>{
+  const r=plan();if(!r){alert('Rajzolj legalább 3 sarkú területet, és ellenőrizd a paramétereket.');return}
+  if(r.ll.length>500&&!confirm(r.ll.length+' waypoint lenne. Biztosan folytatod?'))return;
+  if(wps.length&&!confirm('A jelenlegi waypointok törlődnek. Folytatod?'))return;
+  wps=r.ll.map((q,i)=>({action:og.photoAction?og.photoAction:(i?'NONE':'START_RECORD'),gimbalPitch:og.pitch,gimbalType:'DEFINE',height:og.alt,hoverTime:0,
+    lat:q[0],lng:q[1],poiHeight:50,poiLat:0,poiLng:0,poiType:0,speed:og.speed,speedType:'GLOBAL',yaw:0,yawType:'TO_WAYPOINT',zoomRatio:1,zoomType:'HAND'}));
+  glob.speed=og.speed;sel=0;polyMode=false;setOdraw();
+  drawAll();map.fitBounds(L.latLngBounds(wps.map(w=>[w.lat,w.lng])),{padding:[40,40]});
+};
+
+// Tervezett utak: körberepülés egy pont körül
+const RF=[['radius','Sugár (m)','f'],['alt','Magasság (m)','f'],['speed','Sebesség (m/s)','f'],['count','Waypointok száma / kör','i'],
+ ['laps','Körök száma','i'],['start','Kezdő irány (°, É=0)','f'],['autoPitch','Gimbal automatikusan a ponthoz','b'],['pitch','Gimbal dőlés (°)','i'],
+ ['poiH','Megfigyelt pont magassága (m)','f'],['yawType','Yaw típusa','s','yawTypes'],['poiType','POI típus','i'],
+ ['cw','Óramutató járásával megegyezően','b'],['fillPoi','POI mezők kitöltése','b']];
+const rg={radius:30,alt:40,speed:3,count:24,laps:1,start:0,autoPitch:true,pitch:-30,poiH:0,yawType:'TO_WAYPOINT',poiType:0,cw:true,fillPoi:true};
+let tab='wp',ocen=null,ocm=null;
+const orb=L.layerGroup().addTo(map);
+function orbitPlan(){
+  if(!ocen||!(rg.radius>0)||rg.count<3||rg.laps<1)return null;
+  const kE=111320*Math.cos(ocen.lat*Math.PI/180),kN=110540,dir=rg.cw?1:-1,pts=[];
+  for(let i=0;i<=rg.count*rg.laps;i++){
+    const bd=rg.start+dir*360*i/rg.count,b=bd*Math.PI/180;
+    let y=((bd+180)%360+360)%360;if(y>180)y-=360;
+    pts.push({lat:ocen.lat+rg.radius*Math.cos(b)/kN,lng:ocen.lng+rg.radius*Math.sin(b)/kE,yaw:Math.round(y)});
+  }
+  const pitch=rg.autoPitch?-Math.round(Math.atan2(rg.alt-rg.poiH,rg.radius)*180/Math.PI):rg.pitch;
+  return{pts,pitch,len:2*Math.PI*rg.radius*rg.laps};
+}
+function drawOrbit(){
+  if(ocm){ocm.remove();ocm=null}
+  if(ocen){
+    ocm=L.marker([ocen.lat,ocen.lng],{draggable:true,icon:pin('P','h')}).addTo(map);
+    ocm.on('drag',e=>{const q=e.target.getLatLng();ocen={lat:q.lat,lng:q.lng};ostat2()});
+  }
+  ostat2();
+}
+function ostat2(){
+  const r=orbitPlan(),el=$('rstat');if(!el)return;
+  orb.clearLayers();
+  if(!r){el.textContent=ocen?'Ellenőrizd a paramétereket (legalább 3 waypoint, pozitív sugár).':'Kattints a térképre a megfigyelt pont kijelöléséhez.';return}
+  if(tab=='plan'){
+    L.polyline(r.pts.map(q=>[q.lat,q.lng]),{color:'#8e44ad',weight:2,dashArray:'6 6',interactive:false}).addTo(orb);
+    r.pts.forEach(q=>L.circleMarker([q.lat,q.lng],{radius:3,color:'#8e44ad',weight:1,fillOpacity:1,interactive:false}).addTo(orb));
+  }
+  const t=r.len/rg.speed;
+  el.innerHTML=`${r.pts.length} waypoint · kör kerülete ${Math.round(2*Math.PI*rg.radius)} m · össz. ${Math.round(r.len)} m · kb. ${Math.floor(t/60)} perc ${Math.round(t%60)} mp<br>`+
+    `Gimbal dőlés: ${r.pitch}° · pontok közti táv ${(2*Math.PI*rg.radius/rg.count).toFixed(1)} m`+(rg.alt>120?' <b style="color:var(--wa)">· 120 m fölötti magasság!</b>':'');
+}
+$('rClr').onclick=()=>{ocen=null;drawOrbit()};
+$('rGen').onclick=()=>{
+  const r=orbitPlan();if(!r){alert('Előbb jelölj ki egy pontot a térképen, és ellenőrizd a paramétereket.');return}
+  if(wps.length&&!confirm('A jelenlegi waypointok törlődnek. Folytatod?'))return;
+  wps=r.pts.map((q,i)=>({action:i?'NONE':'START_RECORD',gimbalPitch:r.pitch,gimbalType:'DEFINE',height:rg.alt,hoverTime:0,lat:q.lat,lng:q.lng,
+    poiHeight:rg.fillPoi?rg.poiH:50,poiLat:rg.fillPoi?ocen.lat:0,poiLng:rg.fillPoi?ocen.lng:0,poiType:rg.poiType,speed:rg.speed,speedType:'GLOBAL',
+    yaw:q.yaw,yawType:rg.yawType,zoomRatio:1,zoomType:'HAND'}));
+  glob.speed=rg.speed;sel=0;drawAll();map.fitBounds(L.latLngBounds(wps.map(w=>[w.lat,w.lng])),{padding:[40,40]});
+};
+
+// Fülek
+function setTab(t){
+  tab=t;['wp','ortho','plan'].forEach(k=>{$('tab-'+k).hidden=k!=t});
+  document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t==t));
+  homeMode=false;$('mHome').classList.remove('on');
+  polyMode=(t=='ortho');setOdraw();ostat();ostat2();
+}
+document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>setTab(b.dataset.t));
+
+// Mentés – ugyanabban a formátumban, mint az eredeti fájlok (ábécé szerinti kulcsok, 5.0 jelölés)
+const fmt=(v,t)=>t=='s'?JSON.stringify(String(v)):t=='b'?String(!!v):(t=='f'&&Number.isInteger(v)?v.toFixed(1):String(v));
+const ser=(o,defs)=>{const T={};defs.forEach(d=>T[d[0]]=d[2]);return '{'+Object.keys(T).sort().map(k=>JSON.stringify(k)+':'+fmt(o[k],T[k])).join(',')+'}'};
+
+// Előnézeti kép: műholdas térkép + útvonal, 1920x1080 JPEG
+async function renderImage(){
+  const W=1920,H=1080,pad=220,T=256;
+  const cv=document.createElement('canvas');cv.width=W;cv.height=H;const c=cv.getContext('2d');
+  const px=(lng,z)=>(lng+180)/360*T*2**z;
+  const py=(lat,z)=>{const s=Math.sin(lat*Math.PI/180);return(0.5-Math.log((1+s)/(1-s))/(4*Math.PI))*T*2**z};
+  const pts=wps.map(w=>[w.lat,w.lng]);if(home)pts.push([home.lat,home.lng]);poly.forEach(p=>pts.push([p.lat,p.lng]));
+  const span=z=>{const xs=pts.map(p=>px(p[1],z)),ys=pts.map(p=>py(p[0],z));
+    return[Math.max(...xs)-Math.min(...xs),Math.max(...ys)-Math.min(...ys),(Math.max(...xs)+Math.min(...xs))/2,(Math.max(...ys)+Math.min(...ys))/2]};
+  let z=18;
+  while(z>3){const s=span(z);if(s[0]<=W-2*pad&&s[1]<=H-2*pad)break;z--}
+  const [,,cx,cy]=span(z),ox=cx-W/2,oy=cy-H/2;
+  c.fillStyle='#2d4a35';c.fillRect(0,0,W,H);
+  const jobs=[];
+  for(let tx=Math.floor(ox/T);tx<=Math.floor((ox+W)/T);tx++)for(let ty=Math.floor(oy/T);ty<=Math.floor((oy+H)/T);ty++){
+    jobs.push(new Promise(r=>{const im=new Image();im.crossOrigin='anonymous';
+      im.onload=()=>{c.drawImage(im,Math.round(tx*T-ox),Math.round(ty*T-oy));r(1)};im.onerror=()=>r(0);
+      im.src=`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${ty}/${tx}`}));
+  }
+  const ok=(await Promise.all(jobs)).filter(Boolean).length;
+  const xy=w=>[px(w.lng,z)-ox,py(w.lat,z)-oy];
+  const P=wps.map(xy);
+  if(poly.length>2){c.beginPath();poly.map(xy).forEach((q,i)=>i?c.lineTo(q[0],q[1]):c.moveTo(q[0],q[1]));c.closePath();c.fillStyle='rgba(255,152,0,.18)';c.fill();c.strokeStyle='#ff9800';c.lineWidth=4;c.stroke()}
+  c.lineJoin='round';c.lineCap='round';c.strokeStyle='#00c853';c.lineWidth=7;
+  c.beginPath();P.forEach((p,i)=>i?c.lineTo(p[0],p[1]):c.moveTo(p[0],p[1]));c.stroke();
+  c.strokeStyle='#fff';c.lineWidth=3;
+  for(let i=1;i<P.length;i++){
+    const [x0,y0]=P[i-1],[x1,y1]=P[i],a=Math.atan2(y1-y0,x1-x0),mx=(x0+x1)/2,my=(y0+y1)/2;
+    if(Math.hypot(x1-x0,y1-y0)<60)continue;
+    c.save();c.translate(mx,my);c.rotate(a);c.beginPath();c.moveTo(-6,-8);c.lineTo(5,0);c.lineTo(-6,8);c.stroke();c.restore();
+  }
+  if(home){const[hx,hy]=xy(home);c.fillStyle='#2563eb';c.strokeStyle='#fff';c.lineWidth=4;c.beginPath();c.arc(hx,hy,14,0,7);c.fill();c.stroke()}
+  c.textAlign='center';c.textBaseline='middle';
+  P.forEach((p,i)=>{
+    c.fillStyle=i?'#00e060':'#009e50';c.strokeStyle='#fff';c.lineWidth=4;
+    c.beginPath();c.arc(p[0],p[1],22,0,7);c.fill();c.stroke();
+    c.fillStyle='#fff';c.font='bold 24px sans-serif';c.fillText(i+1,p[0],p[1]+1);
+    const t='\u2195 '+Math.round(wps[i].height)+' m';c.font='22px sans-serif';
+    const tw=c.measureText(t).width+20;
+    c.fillStyle='rgba(0,0,0,.65)';c.fillRect(p[0]-tw/2,p[1]+30,tw,32);
+    c.fillStyle='#fff';c.fillText(t,p[0],p[1]+47);
+  });
+  c.textAlign='right';c.fillStyle='rgba(255,255,255,.8)';c.font='14px sans-serif';
+  c.fillText(ok?'Esri World Imagery':'(térképcsempék nem töltődtek be)',W-10,H-12);
+  return new Promise((res,rej)=>{try{cv.toBlob(b=>b?res(b):rej(new Error('A kép nem készíthető.')),'image/jpeg',0.9)}catch(e){rej(e)}});
+}
+
+async function build(){
+  if(!wps.length)throw new Error('Előbb vegyél fel legalább egy pontot.');
+  const ts=Date.now(),folder='task_'+ts;
+  let n=$('fname').value.trim()||String(ts+7000);
+  if(!/\.json$/i.test(n))n+='.json';
+  const h=home||{height:50,lat:wps[0].lat,lng:wps[0].lng};
+  return{folder,files:[
+    ['global.json',new Blob([ser(glob,GF)],{type:'application/json'})],
+    [n,new Blob(['['+wps.map(w=>ser(w,WF)).join(',')+'];['+ser(h,HF)+']'],{type:'application/json'})],
+    [folder+'.jpeg',await renderImage()]
+  ]};
+}
+async function run(fn){
+  const m=$('msg');m.textContent='Készül…';
+  try{await fn();m.textContent='Kész.'}catch(e){if(e.name=='AbortError')m.textContent='';else{m.textContent='';alert(e.message)}}
+}
+$('dlZ').onclick=()=>run(async()=>{
+  if(typeof JSZip=='undefined')throw new Error('A ZIP-könyvtár nem töltődött be (kell internet).');
+  const {folder,files}=await build(),z=new JSZip(),d=z.folder(folder);
+  files.forEach(([n,b])=>d.file(n,b));
+  const blob=await z.generateAsync({type:'blob'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=folder+'.zip';a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+});
+if(window.showDirectoryPicker){
+  $('dlD').hidden=false;
+  $('dlD').onclick=()=>run(async()=>{
+    const root=await showDirectoryPicker({mode:'readwrite'});
+    const {folder,files}=await build();
+    const dir=await root.getDirectoryHandle(folder,{create:true});
+    for(const [n,b] of files){const w=await(await dir.getFileHandle(n,{create:true})).createWritable();await w.write(b);await w.close()}
+  });
+}
+$('fname').value=String(Date.now())+'.json';
+drawAll();
+setTab('wp');
+</script>
+</body>
+</html>
