@@ -121,7 +121,7 @@ li span{flex:1}
 <label>Küldetésfájl neve
   <input id="fname">
 </label>
-<p class="sub">Egy <b>task_…</b> mappa jön létre, benne: <b>global.json</b>, a küldetésfájl és a <b>task_….jpeg</b> előnézeti kép (1920×1080).</p>
+<p class="sub">Egy <b>task_…</b> mappa jön létre, benne: <b>global.json</b>, a küldetésfájl és a <b>task_….jpg</b> előnézeti kép (1920×1080).</p>
 <div class="row">
   <button id="dlZ" class="pri">Mappa letöltése (ZIP)</button>
   <button id="dlD" class="pri" hidden>Mentés mappába</button>
@@ -506,7 +506,7 @@ async function renderImage(){
   const pts=wps.map(w=>[w.lat,w.lng]);pois.forEach(p=>pts.push([p.lat,p.lng]));poly.forEach(p=>pts.push([p.lat,p.lng]));
   const span=z=>{const xs=pts.map(p=>px(p[1],z)),ys=pts.map(p=>py(p[0],z));
     return[Math.max(...xs)-Math.min(...xs),Math.max(...ys)-Math.min(...ys),(Math.max(...xs)+Math.min(...xs))/2,(Math.max(...ys)+Math.min(...ys))/2]};
-  let z=18;
+  let z=19;
   while(z>3){const s=span(z);if(s[0]<=W-2*pad&&s[1]<=H-2*pad)break;z--}
   const [,,cx,cy]=span(z),ox=cx-W/2,oy=cy-H/2;
   c.fillStyle='#2d4a35';c.fillRect(0,0,W,H);
@@ -530,9 +530,12 @@ async function renderImage(){
   }
   pois.forEach(pp=>{const[hx,hy]=xy(pp);c.fillStyle='#2563eb';c.strokeStyle='#fff';c.lineWidth=4;c.beginPath();c.arc(hx,hy,14,0,7);c.fill();c.stroke()});
   c.textAlign='center';c.textBaseline='middle';
+  const dense=P.length>30;
   P.forEach((p,i)=>{
-    c.fillStyle=i?'#00e060':'#009e50';c.strokeStyle='#fff';c.lineWidth=4;
-    c.beginPath();c.arc(p[0],p[1],22,0,7);c.fill();c.stroke();
+    const big=!dense||i==0||i==P.length-1;
+    c.fillStyle=i?'#00e060':'#009e50';c.strokeStyle='#fff';c.lineWidth=big?4:2;
+    c.beginPath();c.arc(p[0],p[1],big?22:5,0,7);c.fill();c.stroke();
+    if(!big)return;
     c.fillStyle='#fff';c.font='bold 24px sans-serif';c.fillText(i+1,p[0],p[1]+1);
     const t='\u2195 '+Math.round(wps[i].height)+' m';c.font='22px sans-serif';
     const tw=c.measureText(t).width+20;
@@ -541,7 +544,7 @@ async function renderImage(){
   });
   c.textAlign='right';c.fillStyle='rgba(255,255,255,.8)';c.font='14px sans-serif';
   c.fillText(ok?'Esri World Imagery':'(térképcsempék nem töltődtek be)',W-10,H-12);
-  return new Promise((res,rej)=>{try{cv.toBlob(b=>b?res(b):rej(new Error('A kép nem készíthető.')),'image/jpeg',0.9)}catch(e){rej(e)}});
+  return new Promise((res,rej)=>{try{cv.toBlob(b=>b?res(b):rej(new Error('A kép nem készíthető.')),'image/jpeg',0.8)}catch(e){rej(e)}});
 }
 
 async function build(){
@@ -549,13 +552,13 @@ async function build(){
   glob.speed=Math.min(10,Math.max(0.5,glob.speed));
   glob.globalHeight=glob.globalHeightType==1?Math.min(120,Math.max(10,glob.globalHeight||10)):0;
   const ts=Date.now(),folder='task_'+ts;
-  let n=$('fname').value.trim()||String(ts+7000);
+  let n=$('fname').value.trim()||String(ts+71);
   if(!/\.json$/i.test(n))n+='.json';
   if(!pois.length&&wps.some(w=>w.yawType=='TO_POI'||w.gimbalType=='POI'))throw new Error('Van POI módú pont, de nincs POI. Vegyél fel egyet a Waypoint fülön.');
   return{folder,files:[
     ['global.json',new Blob([ser(glob,GF)],{type:'application/json'})],
     [n,new Blob(['['+wps.map(w=>ser(norm(w),WF)).join(',')+'];['+pois.map(q=>ser(q,HF)).join(',')+']'],{type:'application/json'})],
-    [folder+'.jpeg',await renderImage()]
+    [folder+'.jpg',await renderImage()]
   ]};
 }
 async function run(fn){
@@ -579,7 +582,7 @@ if(window.showDirectoryPicker){
     for(const [n,b] of files){const w=await(await dir.getFileHandle(n,{create:true})).createWritable();await w.write(b);await w.close()}
   });
 }
-$('fname').value=String(Date.now())+'.json';
+$('fname').placeholder='(üresen: automatikus, a kép időbélyege + 71)';
 drawAll();
 setTab('wp');
 </script>
