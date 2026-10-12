@@ -151,9 +151,12 @@ const WF=[
  ['poiLat','POI szélesség','f'],['poiLng','POI hosszúság','f'],['poiHeight','POI magasság','f']
 ];
 const GF=[
- ['finishAction','Végén','s','finish'],['lostAction','Jelvesztéskor','s','lost'],
- ['speed','Sebesség (m/s)','f'],['globalHeight','Globális magasság','n'],
- ['globalHeightType','Magasság típusa','i'],['isOrder','Sorrendben (isOrder)','b']
+ ['finishAction','Repülés végén (End of Flight)','s','',[['RETURN','Hazatérés (RTH)'],['BACK','Vissza a kezdőpontra (Back to Start)'],['HOVER','Lebegés (Hover)'],['LAND','Leszállás (Land)']]],
+ ['lostAction','Jelvesztéskor (Signal Lost)','s','',[['RETURN','Hazatérés (RTH)']]],
+ ['speed','Globális sebesség (0,5–10 m/s)','f','',null,{min:0.5,max:10}],
+ ['globalHeightType','Waypoint magasság (Waypoint Altitude)','i','',[[0,'Egyedi (Custom)'],[1,'Globális (Gbl. SET)']]],
+ ['globalHeight','Globális magasság (10–120 m)','n','',null,{min:10,max:120}],
+ ['isOrder','Repülés iránya','b','',[[true,'Előre (Forward Flight)'],[false,'Visszafelé (Reverse Flight)']]]
 ];
 const HF=[['height','Magasság (m)','f'],['lat','Szélesség','f'],['lng','Hosszúság','f']];
 const GTYPES={finishAction:'s',lostAction:'s',speed:'f',globalHeight:'i',globalHeightType:'i',isOrder:'b'};
@@ -219,13 +222,21 @@ function drawList(){
 
 function field(list,obj,def,onchg){
   const f=def[2],el=document.createElement('label');
+  if(def[4]){
+    el.innerHTML=`${def[1]}<select></select>`;const sl=el.querySelector('select'),cur=String(obj[def[0]]),opts=def[4].slice();
+    if(!opts.some(o=>String(o[0])==cur))opts.push([obj[def[0]],cur+' (ismeretlen érték)']);
+    opts.forEach(o=>{const op=document.createElement('option');op.value=String(o[0]);op.textContent=o[1];sl.appendChild(op)});
+    sl.value=cur;
+    sl.onchange=()=>{const v=sl.value;obj[def[0]]=f=='b'?v=='true':f=='i'?parseInt(v):v;onchg&&onchg()};
+    return el;
+  }
   if(f=='b'){
     el.className='chk';el.innerHTML=`<input type="checkbox"> ${def[1]}`;
     const i=el.querySelector('input');i.checked=!!obj[def[0]];
     i.onchange=()=>{obj[def[0]]=i.checked;onchg&&onchg()};return el;
   }
   el.innerHTML=`${def[1]}<input ${f=='s'?'':'type="number" step="any"'} ${def[3]?`list="${def[3]}"`:''}>`;
-  const i=el.querySelector('input');i.value=obj[def[0]];
+  const i=el.querySelector('input');i.value=obj[def[0]];if(def[5]){i.min=def[5].min;i.max=def[5].max}
   i.oninput=()=>{
     if(f=='s'){obj[def[0]]=i.value}
     else{const v=parseFloat(i.value);if(isNaN(v))return;obj[def[0]]=f=='i'?Math.round(v):v}
@@ -235,7 +246,14 @@ function field(list,obj,def,onchg){
 }
 function drawForms(){
   const g=$('gform');g.innerHTML='';
-  GF.forEach(d=>g.appendChild(field(g,glob,d,drawList)));
+  GF.forEach(d=>{
+    const el=field(g,glob,d,()=>{
+      if(d[0]=='globalHeightType'){glob.globalHeight=glob.globalHeightType==1?Math.min(120,Math.max(10,glob.globalHeight||10)):0;drawForms()}
+      drawList();
+    });
+    if(d[0]=='globalHeight'&&glob.globalHeightType==0)el.querySelector('input').disabled=true;
+    g.appendChild(el);
+  });
   const w=$('wform');w.innerHTML='';
   if(sel>=0&&wps[sel]){
     WF.forEach(d=>w.appendChild(field(w,wps[sel],d,()=>{
@@ -479,6 +497,8 @@ async function renderImage(){
 
 async function build(){
   if(!wps.length)throw new Error('Előbb vegyél fel legalább egy pontot.');
+  glob.speed=Math.min(10,Math.max(0.5,glob.speed));
+  glob.globalHeight=glob.globalHeightType==1?Math.min(120,Math.max(10,glob.globalHeight||10)):0;
   const ts=Date.now(),folder='task_'+ts;
   let n=$('fname').value.trim()||String(ts+7000);
   if(!/\.json$/i.test(n))n+='.json';
