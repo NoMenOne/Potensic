@@ -86,7 +86,7 @@ li span{flex:1}
 </div>
 
 <div class="tab" id="tab-ortho" hidden>
-  <p class="sub">1. Jelöld ki a területet: <b>téglalap</b> (kattints az egyik sarokra, mozgasd a kurzort, kattints az átellenes sarokra) vagy <b>sokszög</b> (kattints a sarkokra). 2. Állítsd be a repülési irányt – akár egy kijelölt oldallal párhuzamosan – és az átfedést. A narancs szaggatott vonal élőben mutatja a sorokat és a fotópontokat (zöld = kezdés, piros = vége, nyíl = irány). 3. Nyomd meg az „Útvonal generálása” gombot. Sarok törlése: jobb klikk / hosszú nyomás.</p>
+  <p class="sub">1. Jelöld ki a területet: <b>téglalap</b> (két kattintás az egyik oldalra, majd a kurzor mozgatásával jelenik meg a téglalap teste, harmadik kattintással kész) vagy <b>sokszög</b> (kattints a sarkokra). 2. Állítsd be a repülési irányt – akár egy kijelölt oldallal párhuzamosan – és az átfedést. A narancs szaggatott vonal élőben mutatja a sorokat és a fotópontokat (zöld = kezdés, piros = vége, nyíl = irány). 3. Nyomd meg az „Útvonal generálása” gombot. Sarok törlése: jobb klikk / hosszú nyomás.</p>
   <div class="row">
     <button id="oRect">Téglalap rajzolása</button>
     <button id="oDraw">Sokszög rajzolása</button>
@@ -432,7 +432,7 @@ const OF=[['alt','Repülési magasság (10–120 m)','f','',null,{min:10,max:120
  ['revRows','Kezdés a másik oldalról (sorok sorrendje fordítva)','b'],['revDir','Első sor ellenkező irányba (kezdés a másik végén)','b'],
  ['allPts','Waypoint minden fotóponton','b']];
 const og={alt:60,speed:5,front:75,side:70,angle:0,pitch:-90,fov:84,photoAction:'PHOTO',pw:8192,ph:6144,allPts:true,revRows:false,revDir:false};
-let poly=[],polyMode=false,pm=[],dirMode=false,dirA=null,rectMode=false,rectA=null,sideMode=false;
+let poly=[],polyMode=false,pm=[],dirMode=false,dirA=null,rectMode=false,rectA=null,rectB=null,sideMode=false;
 const prev=L.layerGroup().addTo(map);
 const dirLayer=L.layerGroup().addTo(map);
 const polyLayer=L.polygon([],{color:'#ff9800',weight:3,fillOpacity:.12}).addTo(map);
@@ -481,7 +481,7 @@ function plan(){
 function ostat(){
   const r=plan(),el=$('ostat');if(!el)return;
   prev.clearLayers();updCompass();
-  const hint=dirMode?'<b>Irány kijelölése:</b> kattints a kiindulási pontra, majd arra, amerre repülni szeretnél.<br>':rectMode?'<b>Téglalap:</b> kattints az egyik sarokra, mozgasd a kurzort, majd kattints az átellenes sarokra.<br>':sideMode?(poly.length>=3?'<b>Oldal kiválasztása:</b> vidd a kurzort a kívánt oldalra (kiemelődik), és kattints – a sorok vele párhuzamosak lesznek.<br>':'<b>Előbb jelölj ki egy területet</b> (legalább 3 sarok).<br>'):'';
+  const hint=dirMode?'<b>Irány kijelölése:</b> kattints a kiindulási pontra, majd arra, amerre repülni szeretnél.<br>':rectMode?'<b>Téglalap:</b> 1–2. kattintás: az egyik oldal két végpontja; ezután mozgasd a kurzort (a téglalap teste megjelenik), és a 3. kattintással rögzítsd a szélességét.<br>':sideMode?(poly.length>=3?'<b>Oldal kiválasztása:</b> vidd a kurzort a kívánt oldalra (kiemelődik), és kattints – a sorok vele párhuzamosak lesznek.<br>':'<b>Előbb jelölj ki egy területet</b> (legalább 3 sarok).<br>'):'';
   if(r&&tab=='ortho'){
     L.polyline(r.ll,{color:'#ff9800',weight:2,dashArray:'6 6',interactive:false}).addTo(prev);
     if(r.ll.length<=400)r.ll.forEach(q=>L.circleMarker(q,{radius:3,color:'#ff9800',weight:1,fillOpacity:1,interactive:false}).addTo(prev));
@@ -509,7 +509,7 @@ function setOdraw(){
   $('oSide').classList.toggle('on',sideMode);$('oSide').textContent=sideMode?'Válassz oldalt… (mégse)':'Párhuzamos az oldallal';
 }
 function setOdir(){$('oDir').classList.toggle('on',dirMode);$('oDir').textContent=dirMode?'Irány kijelölése… (mégse)':'Irány kijelölése a térképen'}
-function modeOff(){polyMode=dirMode=rectMode=sideMode=false;dirA=rectA=null;dirLayer.clearLayers()}
+function modeOff(){polyMode=dirMode=rectMode=sideMode=false;dirA=rectA=rectB=null;dirLayer.clearLayers()}
 function setMode(m){
   modeOff();
   if(m=='poly')polyMode=true;else if(m=='rect')rectMode=true;else if(m=='side')sideMode=true;else if(m=='dir')dirMode=true;
@@ -520,23 +520,39 @@ $('oRect').onclick=()=>setMode(rectMode?null:'rect');
 $('oSide').onclick=()=>setMode(sideMode?null:'side');
 $('oDir').onclick=()=>setMode(dirMode?null:'dir');
 $('oClr').onclick=()=>{poly=[];drawPoly()};
-// Téglalap: két átellenes sarok, a kurzor mozgatásakor élő előnézet
+// Téglalap: az első két pont az egyik oldal, a kurzor mozgatásával jelenik meg a téglalap teste
+function rectCorners(cur){
+  if(!rectA||!rectB||!cur)return null;
+  const kE=111320*Math.cos(rectA.lat*Math.PI/180),kN=110540;
+  const bx=(rectB.lng-rectA.lng)*kE,by=(rectB.lat-rectA.lat)*kN,L0=Math.hypot(bx,by);
+  if(L0<1)return null;
+  const ux=bx/L0,uy=by/L0,nx=-uy,ny=ux;
+  const d=((cur.lng-rectA.lng)*kE)*nx+((cur.lat-rectA.lat)*kN)*ny;
+  const ll=(x,y)=>({lat:rectA.lat+y/kN,lng:rectA.lng+x/kE});
+  return{pts:[ll(0,0),ll(bx,by),ll(bx+d*nx,by+d*ny),ll(d*nx,d*ny)],w:L0,h:Math.abs(d)};
+}
 function rectDraw(cur){
   dirLayer.clearLayers();if(!rectA)return;
-  L.circleMarker([rectA.lat,rectA.lng],{radius:6,color:'#fff',weight:2,fillColor:'#ff9800',fillOpacity:1,interactive:false}).addTo(dirLayer);
-  if(cur){
-    const w=map.distance([rectA.lat,rectA.lng],[rectA.lat,cur.lng]),h=map.distance([rectA.lat,rectA.lng],[cur.lat,rectA.lng]);
-    L.rectangle([[rectA.lat,rectA.lng],[cur.lat,cur.lng]],{color:'#ff9800',weight:2,dashArray:'4 4',fillOpacity:.15,interactive:false})
-      .bindTooltip(Math.round(w)+' × '+Math.round(h)+' m',{permanent:true,direction:'center',className:'wtip'}).addTo(dirLayer);
+  const dot=q=>L.circleMarker([q.lat,q.lng],{radius:6,color:'#fff',weight:2,fillColor:'#ff9800',fillOpacity:1,interactive:false}).addTo(dirLayer);
+  const lbl=(l,t)=>l.bindTooltip(t,{permanent:true,direction:'center',className:'wtip'});
+  if(!rectB){
+    if(cur)lbl(L.polyline([[rectA.lat,rectA.lng],[cur.lat,cur.lng]],{color:'#ff9800',weight:3,dashArray:'4 4',interactive:false}),Math.round(map.distance([rectA.lat,rectA.lng],[cur.lat,cur.lng]))+' m').addTo(dirLayer);
+    dot(rectA);return;
   }
+  const r=rectCorners(cur);
+  if(r&&r.h>=0.5)lbl(L.polygon(r.pts.map(q=>[q.lat,q.lng]),{color:'#ff9800',weight:2,dashArray:'4 4',fillOpacity:.15,interactive:false}),Math.round(r.w)+' × '+Math.round(r.h)+' m').addTo(dirLayer);
+  else L.polyline([[rectA.lat,rectA.lng],[rectB.lat,rectB.lng]],{color:'#ff9800',weight:3,interactive:false}).addTo(dirLayer);
+  dot(rectA);dot(rectB);
 }
 function rectClick(lat,lng){
   if(!rectA){rectA={lat,lng};rectDraw(null);return}
-  const A=rectA;
-  if(Math.abs(lat-A.lat)>1e-7&&Math.abs(lng-A.lng)>1e-7){
-    poly=[{lat:A.lat,lng:A.lng},{lat:A.lat,lng},{lat,lng},{lat,lng:A.lng}];
+  if(!rectB){
+    if(map.distance([rectA.lat,rectA.lng],[lat,lng])<1)return;
+    rectB={lat,lng};rectDraw(null);return;
   }
-  rectA=null;rectMode=false;dirLayer.clearLayers();setOdraw();drawPoly();
+  const r=rectCorners({lat,lng});
+  if(!r||r.h<1)return;
+  poly=r.pts;rectA=rectB=null;rectMode=false;dirLayer.clearLayers();setOdraw();drawPoly();
 }
 // Oldallal párhuzamos irány
 function nearestEdge(lat,lng){
