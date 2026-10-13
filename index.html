@@ -107,8 +107,17 @@ li span{flex:1}
 </div>
 
 <div class="tab" id="tab-plan" hidden>
-  <p class="sub"><b>Körberepülés:</b> kattints a térképre a megfigyelt pont kijelöléséhez (húzással áthelyezhető). A drón e pont körül repül körbe.</p>
+  <p class="sub">Válassz egy előre megtervezett útvonalat, kattints a térképre a <b>pont</b> kijelöléséhez (a megfigyelt pont, a rakétánál és a felfedésnél a kezdőpont; húzással áthelyezhető), állítsd be a paramétereket, majd generáld az útvonalat. A saját beállításaidat sablonként elmentheted.</p>
+  <label>Útvonal típusa
+    <select id="pType"></select>
+  </label>
+  <p class="sub" id="pDesc" style="margin-top:6px"></p>
   <div class="grid" id="rform"></div>
+  <div class="row">
+    <input id="tplName" placeholder="Sablon neve" style="flex:2">
+    <button id="tplSave">Mentés sablonként</button>
+    <button id="tplDel" class="del" hidden>Sablon törlése</button>
+  </div>
   <div class="row">
     <button id="rClr" class="del">Pont törlése</button>
     <button id="rGen" class="pri">Útvonal generálása</button>
@@ -354,7 +363,7 @@ function drawForms(){
     });
   }else w.innerHTML='<p class="sub" style="grid-column:1/-1">Válassz ki egy pontot a listában vagy a térképen.</p>';
   const o=$('oform');o.innerHTML='';OF.forEach(d=>o.appendChild(field(o,og,d,ostat)));ostat();
-  const rr=$('rform');rr.innerHTML='';RF.forEach(d=>rr.appendChild(field(rr,rg,d,ostat2)));ostat2();
+  drawPlanForm();
   const h=$('pform');h.innerHTML='';
   pois.forEach((p,i)=>{
     const cap=document.createElement('div');cap.style.cssText='grid-column:1/-1;margin-top:6px;display:flex;justify-content:space-between;align-items:center';
@@ -614,22 +623,139 @@ $('oGen').onclick=()=>{
   drawAll();map.fitBounds(L.latLngBounds(wps.map(w=>[w.lat,w.lng])),{padding:[40,40]});
 };
 
-// Tervezett utak: körberepülés egy pont körül
-const RF=[['radius','Sugár (m)','f'],['alt','Magasság (10–120 m)','f','',null,{min:10,max:120}],['speed','Sebesség (0,5–10 m/s)','f','',null,{min:0.5,max:10}],
- ['count','Waypointok száma / kör','i'],['laps','Körök száma','i'],['start','Kezdő irány (°, É=0)','f'],
- ['poiMode','Drón és gimbal a pont felé (POI)','b'],['pitch','Gimbal dőlés, ha nincs POI (−90…30°)','i','',null,{min:-90,max:30}],
- ['poiH','Megfigyelt pont magassága (m)','f'],['cw','Óramutató járásával megegyezően','b']];
-const rg={radius:30,alt:40,speed:3,count:24,laps:1,start:0,poiMode:true,pitch:-30,poiH:35,cw:true};
+// ===== Tervezett utak =====
 let tab='wp',ocen=null,ocm=null;
 const orb=L.layerGroup().addTo(map);
-function orbitPlan(){
-  if(!ocen||!(rg.radius>0)||rg.count<3||rg.laps<1)return null;
-  const kE=111320*Math.cos(ocen.lat*Math.PI/180),kN=110540,dir=rg.cw?1:-1,pts=[];
-  for(let i=0;i<=rg.count*rg.laps;i++){
-    const b=(rg.start+dir*360*i/rg.count)*Math.PI/180;
-    pts.push({lat:ocen.lat+rg.radius*Math.cos(b)/kN,lng:ocen.lng+rg.radius*Math.sin(b)/kE});
+const rad=a=>a*Math.PI/180,br=(r,b)=>[r*Math.sin(rad(b)),r*Math.cos(rad(b))],lerp=(a,b,f)=>a+(b-a)*f;
+const nyaw=a=>{a=((a%360)+360)%360;return a>180?a-360:a};
+const TRK=[['poi','Drón és gimbal a pont felé (POI)','b'],['poiH','Megfigyelt pont magassága (m)','f'],['pitch','Gimbal dőlés, ha nincs POI (−90…30°)','i','',null,{min:-90,max:30}]];
+const SPD=['speed','Sebesség (0,5–10 m/s)','f','',null,{min:0.5,max:10}];
+const ALT=(k,l)=>[k,l+' (10–120 m)','f','',null,{min:10,max:120}];
+const DIR=(k,l)=>[k,l+' (°, É=0)','f'];
+const PIT=(k,l)=>[k,l+' (−90…30°)','i','',null,{min:-90,max:30}];
+const CNT=(k,l,mn)=>[k,l,'i','',null,{min:mn,max:500}];
+const cam=p=>p.poi?{track:true}:{pitch:p.pitch};
+
+// Minden típus: name, desc, F (űrlap), D (alapértékek), gen(p) → {pts:[{x,y,h,...}],note} | null
+// pont-opciók: track (POI felé néz), pitch (gimbal), yaw (egyedi irány), zoom, action, hover
+const PT={
+ orbit:{name:'Körberepülés',desc:'A drón egy kör mentén repül a kijelölt pont körül, tetszőleges számú kört téve. Állandó magasság.',
+  F:[['radius','Sugár (m)','f'],ALT('alt','Magasság'),SPD,CNT('laps','Körök száma',1),CNT('count','Waypointok száma / kör',3),DIR('start','Kezdő irány'),['cw','Óramutató járásával megegyezően','b'],...TRK],
+  D:{radius:30,alt:40,speed:3,laps:1,count:24,start:0,cw:true,poi:true,poiH:35,pitch:-30},
+  gen:p=>{if(!(p.radius>0&&p.count>=3&&p.laps>=1))return null;
+    const pts=[],n=Math.round(p.count*p.laps),d=p.cw?1:-1;
+    for(let i=0;i<=n;i++){const[x,y]=br(p.radius,p.start+d*360*i/p.count);pts.push({x,y,h:p.alt,...cam(p)})}
+    return{pts}}},
+ rocket:{name:'Rakéta',desc:'A drón függőlegesen felemelkedik a kijelölt pont fölött, a kamera lefelé néz. A kijelölt pont a kezdőpont. (A waypointok azonos koordinátán, eltérő magasságon vannak.)',
+  F:[ALT('alt0','Kezdő magasság'),ALT('alt1','Végső magasság'),CNT('count','Waypointok száma',2),SPD,PIT('pitch','Gimbal dőlés'),DIR('yaw','Kamera iránya')],
+  D:{alt0:10,alt1:100,count:2,speed:5,pitch:-90,yaw:0},
+  gen:p=>{if(!(p.count>=2))return null;const pts=[];
+    for(let i=0;i<p.count;i++){const f=i/(p.count-1);pts.push({x:0,y:0,h:lerp(p.alt0,p.alt1,f),pitch:p.pitch,yaw:p.yaw})}
+    return{pts}}},
+ dronie:{name:'Közeli távolodó (Dronie)',desc:'A drón a tárgytól / személytől hátrafelé és felfelé távolodik, miközben a kamera végig rajta marad.',
+  F:[DIR('dir','Távolodás iránya'),['d0','Kezdő távolság (m)','f'],['d1','Végső távolság (m)','f'],ALT('alt0','Kezdő magasság'),ALT('alt1','Végső magasság'),CNT('count','Szakaszok száma',1),SPD,...TRK],
+  D:{dir:180,d0:5,d1:60,alt0:10,alt1:50,count:6,speed:4,poi:true,poiH:2,pitch:-20},
+  gen:p=>{if(!(p.count>=1))return null;const pts=[];
+    for(let i=0;i<=p.count;i++){const f=i/p.count,[x,y]=br(lerp(p.d0,p.d1,f),p.dir);pts.push({x,y,h:lerp(p.alt0,p.alt1,f),...cam(p)})}
+    return{pts}}},
+ spiral:{name:'Spirál',desc:'Emelkedő (vagy süllyedő) és közben táguló (vagy szűkülő) spirál a pont körül. Süllyedő spirálhoz a végső magasság legyen alacsonyabb.',
+  F:[['r0','Kezdő sugár (m)','f'],['r1','Végső sugár (m)','f'],ALT('alt0','Kezdő magasság'),ALT('alt1','Végső magasság'),['turns','Fordulatok száma','f'],CNT('count','Waypointok száma / fordulat',3),DIR('start','Kezdő irány'),['cw','Óramutató járásával megegyezően','b'],SPD,...TRK],
+  D:{r0:15,r1:50,alt0:20,alt1:80,turns:2,count:16,start:0,cw:true,speed:3,poi:true,poiH:2,pitch:-30},
+  gen:p=>{if(!(p.turns>0&&p.count>=3))return null;
+    const n=Math.round(p.count*p.turns),d=p.cw?1:-1,pts=[];
+    for(let i=0;i<=n;i++){const f=i/n,[x,y]=br(lerp(p.r0,p.r1,f),p.start+d*360*p.turns*f);pts.push({x,y,h:lerp(p.alt0,p.alt1,f),...cam(p)})}
+    return{pts}}},
+ boomerang:{name:'Bumeráng',desc:'Ovális pálya a pont körül: a drón a kezdőpontból elindul, egy nagy ellipszist ír le (távolodva emelkedik, visszafelé süllyed), és a kezdőpontba érkezik vissza.',
+  F:[DIR('dir','Kezdőpont iránya a ponttól'),['d0','Kezdő távolság (m)','f'],['a','Hosszú félátmérő (m)','f'],['b','Rövid félátmérő (m)','f'],ALT('alt0','Kezdő magasság'),ALT('alt1','Legmagasabb pont'),CNT('count','Waypointok száma',8),['cw','Óramutató járásával megegyezően','b'],SPD,...TRK],
+  D:{dir:180,d0:10,a:30,b:20,alt0:15,alt1:50,count:24,cw:true,speed:4,poi:true,poiH:2,pitch:-25},
+  gen:p=>{if(!(p.count>=8&&p.a>0&&p.b>0))return null;
+    const u=br(1,p.dir),nn=[u[1],-u[0]],sg=p.cw?1:-1,pts=[];
+    for(let i=0;i<=p.count;i++){const t=2*Math.PI*i/p.count,al=p.d0+p.a-p.a*Math.cos(t),pe=sg*p.b*Math.sin(t);
+      pts.push({x:al*u[0]+pe*nn[0],y:al*u[1]+pe*nn[1],h:lerp(p.alt0,p.alt1,(1-Math.cos(t))/2),...cam(p)})}
+    return{pts}}},
+ asteroid:{name:'Aszteroida (oda-vissza)',desc:'A drón hátrafelé és felfelé távolodik, a csúcson körbe fotózza a környezetet (panoráma „kis bolygóhoz”), majd – ha be van kapcsolva – ugyanazon az úton vissza is repül a kiindulóponthoz.',
+  F:[DIR('dir','Távolodás iránya'),['d0','Kezdő távolság (m)','f'],['d1','Végső távolság (m)','f'],ALT('alt0','Kezdő magasság'),ALT('alt1','Csúcs magasság'),CNT('count','Szakaszok száma (kifelé)',1),CNT('shots','Panoráma fotók száma (körben)',0),PIT('panPitch','Panoráma gimbal dőlés'),['nadir','Lefelé néző fotó is','b'],['back','Visszarepülés a kiindulóponthoz','b'],SPD,...TRK],
+  D:{dir:180,d0:5,d1:60,alt0:10,alt1:80,count:5,shots:8,panPitch:-45,nadir:true,back:true,speed:4,poi:true,poiH:2,pitch:-20},
+  gen:p=>{if(!(p.count>=1))return null;
+    const out=[];for(let i=0;i<=p.count;i++){const f=i/p.count,[x,y]=br(lerp(p.d0,p.d1,f),p.dir);out.push({x,y,h:lerp(p.alt0,p.alt1,f),action:'NONE',...cam(p)})}
+    const pts=out.slice(),top=out[out.length-1],y0=p.dir+180;
+    for(let j=0;j<p.shots;j++)pts.push({x:top.x,y:top.y,h:top.h,yaw:y0+360*j/p.shots,pitch:p.panPitch,action:'PHOTO',hover:1});
+    if(p.nadir)pts.push({x:top.x,y:top.y,h:top.h,yaw:y0,pitch:-90,action:'PHOTO',hover:1});
+    if(p.back)for(let i=out.length-2;i>=0;i--)pts.push({...out[i]});
+    return{pts,note:(p.shots+(p.nadir?1:0))+' fotó a csúcson.'}}},
+ hitchcock:{name:'Hitchcock-effektus (Dolly zoom)',desc:'A drón távolodik a tárgytól, miközben a zoom egyre nagyobb: a tárgy mérete állandó marad, a háttér viszont „megnyúlik”. Fordított irányban közeledik. A zoom legfeljebb 4×, ezért a távoli távolság legfeljebb 4× a közelinek.',
+  F:[DIR('dir','Távolodás iránya'),['d0','Közeli távolság (m)','f'],['d1','Távoli távolság (m)','f'],ALT('alt','Magasság'),CNT('count','Szakaszok száma',2),['back','Fordított irány (távolról közelebb)','b'],SPD,['poiH','Megfigyelt pont magassága (m)','f']],
+  D:{dir:180,d0:10,d1:40,alt:12,count:8,back:false,speed:1.5,poiH:2},
+  gen:p=>{if(!(p.d0>0&&p.count>=2))return null;
+    const d1=Math.min(p.d1,4*p.d0),pts=[];
+    for(let i=0;i<=p.count;i++){const f=i/p.count,d=lerp(p.d0,d1,f),[x,y]=br(d,p.dir);
+      pts.push({x,y,h:p.alt,track:true,zoom:Math.min(4,Math.max(1,Math.round(d/p.d0*10)/10))})}
+    if(p.back)pts.reverse();
+    return{pts,note:'Zoom 1,0× → '+(d1/p.d0).toFixed(1)+'×'+(d1<p.d1?' (a távolság a 4× határra korlátozva)':'')+'.'}}},
+ flyover:{name:'Átrepülés a pont felett',desc:'Egyenes vonalú átrepülés a kijelölt pont fölött, az egyik oldaláról a másikra. A gimbal alapból lefelé néz.',
+  F:[DIR('dir','Érkezés iránya (innen indul)'),['len','Hossz a ponttól mindkét irányban (m)','f'],ALT('alt','Magasság a végpontoknál'),ALT('altMid','Magasság a pont felett'),CNT('count','Szakaszok száma / oldal',1),SPD,PIT('pitch','Gimbal dőlés')],
+  D:{dir:180,len:50,alt:30,altMid:30,count:5,speed:5,pitch:-90},
+  gen:p=>{if(!(p.count>=1&&p.len>0))return null;const pts=[],n=2*Math.round(p.count);
+    for(let i=0;i<=n;i++){const f=i/n,[x,y]=br(p.len*(1-2*f),p.dir);pts.push({x,y,h:lerp(p.altMid,p.alt,Math.abs(1-2*f)),pitch:p.pitch})}
+    return{pts}}},
+ reveal:{name:'Felfedés (Reveal)',desc:'A drón egyenesen előre repül és emelkedik, miközben a gimbal fokozatosan felbillen (például lefelé nézésből a horizont felé). A kijelölt pont a kezdőpont.',
+  F:[DIR('dir','Repülés iránya'),['len','Hossz (m)','f'],ALT('alt0','Kezdő magasság'),ALT('alt1','Végső magasság'),PIT('pitch0','Kezdő gimbal dőlés'),PIT('pitch1','Végső gimbal dőlés'),CNT('count','Szakaszok száma',1),SPD],
+  D:{dir:0,len:80,alt0:15,alt1:50,pitch0:-90,pitch1:-10,count:6,speed:4},
+  gen:p=>{if(!(p.count>=1&&p.len>0))return null;const pts=[];
+    for(let i=0;i<=p.count;i++){const f=i/p.count,[x,y]=br(p.len*f,p.dir);pts.push({x,y,h:lerp(p.alt0,p.alt1,f),pitch:Math.round(lerp(p.pitch0,p.pitch1,f))})}
+    return{pts}}}
+};
+const rgAll={};Object.keys(PT).forEach(k=>rgAll[k]={...PT[k].D});
+let curType='orbit',curTpl=-1,rg=rgAll[curType],tpls=[];
+try{tpls=(JSON.parse(localStorage.getItem('wp_plan_tpls')||'[]')||[]).filter(t=>t&&PT[t.type]&&t.name&&t.params)}catch(e){tpls=[]}
+const saveTpls=()=>{try{localStorage.setItem('wp_plan_tpls',JSON.stringify(tpls))}catch(e){alert('A sablon nem menthető a böngészőben.')}};
+
+function refreshPType(){
+  const s=$('pType');s.innerHTML='';
+  const g1=document.createElement('optgroup');g1.label='Beépített útvonalak';
+  Object.keys(PT).forEach(k=>{const o=document.createElement('option');o.value=k;o.textContent=PT[k].name;g1.appendChild(o)});s.appendChild(g1);
+  if(tpls.length){
+    const g2=document.createElement('optgroup');g2.label='Saját sablonok';
+    tpls.forEach((t,i)=>{const o=document.createElement('option');o.value='u'+i;o.textContent='★ '+t.name+' ('+PT[t.type].name+')';g2.appendChild(o)});s.appendChild(g2);
   }
-  return{pts,len:2*Math.PI*rg.radius*rg.laps};
+  s.value=curTpl>=0?'u'+curTpl:curType;
+  $('tplDel').hidden=curTpl<0;
+}
+function drawPlanForm(){
+  refreshPType();
+  $('pDesc').textContent=PT[curType].desc;
+  const rr=$('rform');rr.innerHTML='';
+  PT[curType].F.forEach(d=>rr.appendChild(field(rr,rg,d,ostat2)));
+  ostat2();
+}
+$('pType').onchange=()=>{
+  const v=$('pType').value;
+  if(v[0]=='u'){const t=tpls[+v.slice(1)];curType=t.type;curTpl=+v.slice(1);rgAll[curType]={...PT[curType].D,...t.params};$('tplName').value=t.name}
+  else{curType=v;curTpl=-1;$('tplName').value=''}
+  rg=rgAll[curType];drawPlanForm();
+};
+$('tplSave').onclick=()=>{
+  const name=$('tplName').value.trim();if(!name){alert('Add meg a sablon nevét.');return}
+  const k=tpls.findIndex(t=>t.name==name);
+  if(k>=0&&!confirm('Már van „'+name+'” nevű sablon. Felülírod?'))return;
+  const t={name,type:curType,params:{...rg}};
+  if(k>=0){tpls[k]=t;curTpl=k}else{tpls.push(t);curTpl=tpls.length-1}
+  saveTpls();refreshPType();
+};
+$('tplDel').onclick=()=>{
+  if(curTpl<0||!confirm('Törlöd a(z) „'+tpls[curTpl].name+'” sablont?'))return;
+  tpls.splice(curTpl,1);curTpl=-1;saveTpls();$('tplName').value='';refreshPType();
+};
+
+function planBuild(){
+  if(!ocen)return{err:'Kattints a térképre a pont kijelöléséhez.'};
+  let g;try{g=PT[curType].gen(rg)}catch(e){g=null}
+  if(!g||!g.pts.length||g.pts.some(q=>![q.x,q.y,q.h].every(isFinite)))return{err:'Ellenőrizd a paramétereket.'};
+  if(g.pts.length>500)return{err:g.pts.length+' waypoint lenne – csökkentsd a számukat (legfeljebb 500).'};
+  const kE=111320*Math.cos(ocen.lat*Math.PI/180),kN=110540;
+  const pts=g.pts.map(q=>({...q,h:Math.min(120,Math.max(10,q.h)),lat:ocen.lat+q.y/kN,lng:ocen.lng+q.x/kE}));
+  let len=0;for(let i=1;i<pts.length;i++)len+=Math.hypot(pts[i].x-pts[i-1].x,pts[i].y-pts[i-1].y,pts[i].h-pts[i-1].h);
+  return{pts,len,note:g.note||'',usesPoi:pts.some(q=>q.track)};
 }
 function drawOrbit(){
   if(ocm){ocm.remove();ocm=null}
@@ -640,24 +766,32 @@ function drawOrbit(){
   ostat2();
 }
 function ostat2(){
-  const r=orbitPlan(),el=$('rstat');if(!el)return;
+  const el=$('rstat');if(!el)return;
   orb.clearLayers();
-  if(!r){el.textContent=ocen?'Ellenőrizd a paramétereket (legalább 3 waypoint, pozitív sugár).':'Kattints a térképre a megfigyelt pont kijelöléséhez.';return}
+  const r=planBuild();
+  if(r.err){el.textContent=r.err;return}
   if(tab=='plan'){
     L.polyline(r.pts.map(q=>[q.lat,q.lng]),{color:'#8e44ad',weight:2,dashArray:'6 6',interactive:false}).addTo(orb);
     r.pts.forEach(q=>L.circleMarker([q.lat,q.lng],{radius:3,color:'#8e44ad',weight:1,fillOpacity:1,interactive:false}).addTo(orb));
+    const a=r.pts[0],z=r.pts[r.pts.length-1];
+    L.circleMarker([a.lat,a.lng],{radius:8,color:'#fff',weight:2,fillColor:'#00c853',fillOpacity:1,interactive:false}).addTo(orb);
+    L.circleMarker([z.lat,z.lng],{radius:8,color:'#fff',weight:2,fillColor:'#e53935',fillOpacity:1,interactive:false}).addTo(orb);
   }
   const t=r.len/rg.speed;
-  el.innerHTML=`${r.pts.length} waypoint · kör kerülete ${Math.round(2*Math.PI*rg.radius)} m · össz. ${Math.round(r.len)} m · kb. ${Math.floor(t/60)} perc ${Math.round(t%60)} mp<br>`+
-    `Pontok közti táv ${(2*Math.PI*rg.radius/rg.count).toFixed(1)} m`+(rg.poiMode?' · a gimbal dőlését az app számolja a POI-hoz':'');
+  el.innerHTML=`${r.pts.length} waypoint · útvonal ${Math.round(r.len)} m · kb. ${Math.floor(t/60)} perc ${Math.round(t%60)} mp`+(r.usesPoi?' · a gimbal dőlését az app számolja a POI-hoz':'')+(r.note?'<br>'+r.note:'');
 }
 $('rClr').onclick=()=>{ocen=null;drawOrbit()};
 $('rGen').onclick=()=>{
-  const r=orbitPlan();if(!r){alert('Előbb jelölj ki egy pontot a térképen, és ellenőrizd a paramétereket.');return}
+  const r=planBuild();if(r.err){alert(r.err);return}
   if(wps.length&&!confirm('A jelenlegi waypointok és POI-k törlődnek. Folytatod?'))return;
-  pois=rg.poiMode?[{height:rg.poiH,lat:ocen.lat,lng:ocen.lng}]:[];
-  wps=r.pts.map((q,i)=>({action:i?'NONE':'START_RECORD',gimbalPitch:rg.pitch,gimbalType:rg.poiMode?'POI':'DEFINE',height:rg.alt,hoverTime:0,lat:q.lat,lng:q.lng,
-    poiHeight:50,poiLat:0,poiLng:0,poiType:0,poiIdx:rg.poiMode?0:-1,speed:rg.speed,speedType:'DEFINE',yaw:0,yawType:rg.poiMode?'TO_POI':'TO_WAYPOINT',zoomRatio:1,zoomType:'HAND'}));
+  pois=r.usesPoi?[{height:rg.poiH,lat:ocen.lat,lng:ocen.lng}]:[];
+  wps=r.pts.map((q,i)=>{
+    const yd=q.yaw!=null;
+    return{action:q.action||(i?'NONE':'START_RECORD'),gimbalPitch:q.pitch!=null?Math.round(q.pitch):0,gimbalType:(q.track&&q.pitch==null)?'POI':'DEFINE',
+      height:Math.round(q.h*10)/10,hoverTime:q.hover||0,lat:q.lat,lng:q.lng,poiHeight:50,poiLat:0,poiLng:0,poiType:0,poiIdx:r.usesPoi?0:-1,
+      speed:rg.speed,speedType:'DEFINE',yaw:yd?Math.round(nyaw(q.yaw)):0,yawType:yd?'DEFINE':(q.track?'TO_POI':'TO_WAYPOINT'),
+      zoomRatio:q.zoom||1,zoomType:q.zoom?'DEFINE':'HAND'};
+  });
   sel=0;drawAll();map.fitBounds(L.latLngBounds(wps.map(w=>[w.lat,w.lng])),{padding:[40,40]});
 };
 
