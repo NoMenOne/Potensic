@@ -3,8 +3,11 @@ Potensic atom 3 waypoint tervező!
 global.json
 
 App menü	Kulcs	Érték a fájlban
+
 End of Flight: Back to Start	finishAction	BACK
+
 End of Flight: Hover	finishAction	HOVER
+
 End of Flight: Land	finishAction	LAND
 End of Flight: RTH	finishAction	RETURN
 Global Speed (0,5–10 m/s)	speed	szám, pl. 5.0
