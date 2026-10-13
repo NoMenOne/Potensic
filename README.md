@@ -73,6 +73,21 @@ Alapértékek: 60 m, 5 m/s, 75% előre / 70% oldalsó átfedés, 84° átlós l�
 
 Alapértékek: 30 m sugár, 40 m magasság, 3 m/s, 24 pont/kör.
 
+-  **Körberepülés:** a körök száma szabadon állítható.
+-  **Rakéta:** függőleges emelkedés, a kamera lefelé néz. A waypointok azonos koordinátán, más magasságon vannak, ezt az app elfogadja-e, nem tudom.
+-  **Közeli távolodó (Dronie):** hátrafelé és felfelé távolodik, a kamera végig a ponton marad.
+-  **Spirál:** emelkedő vagy süllyedő, táguló vagy szűkülő. Süllyedőhöz a végső magasság legyen alacsonyabb.
+-  **Bumeráng:** ovális pálya, ami a kezdőpontnál ér véget.
+-  **Aszteroida (oda-vissza):** távolodik, a csúcson körbe fotózza a környezetet, majd ugyanazon az úton vissza is repül. A visszarepülés és a lefelé néző fotó kikapcsolható.
+-  **Hitchcock-effektus (Dolly zoom):** távolodás közben nő a zoom (1×-ról legfeljebb 4×-ra), vagy fordítva. Ha a távoli távolság több mint 4× a közelinek, a generátor visszavágja.
+-  **Átrepülés a pont felett és Felfedés (Reveal):** a gimbal lefelé nézésből fokozatosan a horizont felé billen.
+-  **Nyolcas (∞):** a kijelölt pont a két hurok keresztezésénél van, a hosszanti tengely iránya és a nyolcasok száma állítható. A POI alapból ki van kapcsolva, mert a keresztezésnél a drón közvetlenül a pont fölött repül, és ott a gimbal iránya nem értelmezhető.
+-  **Négyzet / sokszög körözés:** az oldalak száma állítható (4 = négyzet, 3 = háromszög, 5 = ötszög stb.). Megadhatod a sugarat, a köröket és az oldalankénti pontszámot is.
+-  **Elhaladás a pont mellett (parallaxis):** egyenes oldalazó repülés a pont mellett, a kamera végig a ponton marad. Negatív oldaltávolsággal a másik oldalra kerülsz.
+-  **Közeledő (Push-in):** a dronie fordítottja, távoli, magas pontból közelít és süllyed a tárgy felé.
+-  **Fal / homlokzat szkennelése:** soronként, kígyózva repül egy függőleges síkban, a kamera a falra néz. Be lehet kapcsolni a fotót minden ponton, a sorok száma és szélessége állítható.
+-  **Félgömb (3D-modellhez):** egymás feletti körök a tárgy körül, minden ponton fotóval, a kamera a tárgyra néz. Az előnézet kiírja, hogy a magasságok a 10–120 m tartományba esnek-e.
+
 ### Közös felület
 
 - **Globális beállítások**: lásd a [global.json](#globaljson) szakaszt.
