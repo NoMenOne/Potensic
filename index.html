@@ -703,7 +703,54 @@ const PT={
   D:{dir:0,len:80,alt0:15,alt1:50,pitch0:-90,pitch1:-10,count:6,speed:4},
   gen:p=>{if(!(p.count>=1&&p.len>0))return null;const pts=[];
     for(let i=0;i<=p.count;i++){const f=i/p.count,[x,y]=br(p.len*f,p.dir);pts.push({x,y,h:lerp(p.alt0,p.alt1,f),pitch:Math.round(lerp(p.pitch0,p.pitch1,f))})}
-    return{pts}}}
+    return{pts}}},
+ eight:{name:'Nyolcas (∞)',desc:'Nyolcas alakú (∞) pálya, a kijelölt pont a két hurok keresztezésénél van. Állandó magasság. POI esetén a kamera a keresztezési pontra néz.',
+  F:[['size','Fél hossz (m)','f'],ALT('alt','Magasság'),CNT('loops','Nyolcasok száma',1),CNT('count','Waypointok száma / nyolcas',8),DIR('dir','Hosszanti tengely iránya'),SPD,...TRK],
+  D:{size:40,alt:40,loops:1,count:32,dir:0,speed:3,poi:false,poiH:2,pitch:-30},
+  gen:p=>{if(!(p.size>0&&p.count>=8&&p.loops>=1))return null;
+    const n=Math.round(p.count*p.loops),sd=Math.sin(rad(p.dir)),cd=Math.cos(rad(p.dir)),pts=[];
+    for(let i=0;i<=n;i++){const t=2*Math.PI*i/p.count,u=p.size*Math.sin(t),v=p.size*0.5*Math.sin(2*t);
+      pts.push({x:u*sd+v*cd,y:u*cd-v*sd,h:p.alt,...cam(p)})}
+    return{pts}}},
+ polygon:{name:'Négyzet / sokszög körözés',desc:'Szabályos sokszög (négyzet, háromszög, ötszög…) alakú pálya a pont körül, tetszőleges számú körrel. 4 oldal = négyzet.',
+  F:[CNT('sides','Oldalak száma (4 = négyzet)',3),['radius','Sugár a csúcsokig (m)','f'],ALT('alt','Magasság'),CNT('laps','Körök száma',1),CNT('sub','Pont oldalanként',1),DIR('start','Első csúcs iránya'),['cw','Óramutató járásával megegyezően','b'],SPD,...TRK],
+  D:{sides:4,radius:40,alt:40,laps:1,sub:2,start:45,cw:true,speed:3,poi:true,poiH:20,pitch:-30},
+  gen:p=>{if(!(p.sides>=3&&p.radius>0&&p.sub>=1&&p.laps>=1))return null;
+    const d=p.cw?1:-1,V=[],pts=[];
+    for(let k=0;k<p.sides;k++)V.push(br(p.radius,p.start+d*360*k/p.sides));
+    for(let l=0;l<p.laps;l++)for(let k=0;k<p.sides;k++){const A=V[k],B=V[(k+1)%p.sides];
+      for(let j=0;j<p.sub;j++){const f=j/p.sub;pts.push({x:lerp(A[0],B[0],f),y:lerp(A[1],B[1],f),h:p.alt,...cam(p)})}}
+    pts.push({x:V[0][0],y:V[0][1],h:p.alt,...cam(p)});
+    return{pts}}},
+ pass:{name:'Elhaladás a pont mellett (parallaxis)',desc:'Egyenes vonalú oldalazó repülés a pont mellett, miközben a kamera végig a ponton marad – látványos parallaxis-hatás.',
+  F:[DIR('dir','Repülés iránya'),['side','Oldaltávolság a ponttól (m, negatív: másik oldal)','f'],['len','Hossz a pont előtt és után (m)','f'],ALT('alt','Magasság'),CNT('count','Szakaszok száma',1),SPD,...TRK],
+  D:{dir:0,side:30,len:60,alt:25,count:8,speed:4,poi:true,poiH:2,pitch:-20},
+  gen:p=>{if(!(p.count>=1&&p.len>0))return null;
+    const u=br(1,p.dir),n=br(1,p.dir+90),pts=[];
+    for(let i=0;i<=p.count;i++){const a=p.len*(2*i/p.count-1);pts.push({x:a*u[0]+p.side*n[0],y:a*u[1]+p.side*n[1],h:p.alt,...cam(p)})}
+    return{pts}}},
+ pushin:{name:'Közeledő (Push-in)',desc:'A dronie fordítottja: a drón távoli, magas pontból közelít és süllyed a tárgy felé, a kamera végig rajta marad.',
+  F:[DIR('dir','Kiindulás iránya a ponttól'),['d0','Kezdő távolság (m)','f'],['d1','Végső távolság (m)','f'],ALT('alt0','Kezdő magasság'),ALT('alt1','Végső magasság'),CNT('count','Szakaszok száma',1),SPD,...TRK],
+  D:{dir:180,d0:70,d1:8,alt0:50,alt1:15,count:6,speed:4,poi:true,poiH:2,pitch:-20},
+  gen:p=>PT.dronie.gen(p)},
+ facade:{name:'Fal / homlokzat szkennelése',desc:'Soronként (kígyózva) repül egy függőleges síkban: vízszintesen halad, soronként magasabbra lép, a kamera végig a falra néz. A kijelölt pont a sorok közepe, a kamera irányát a fal felé kell megadni.',
+  F:[DIR('look','Kamera iránya (a fal felé)'),['width','Sor szélessége (m)','f'],ALT('alt0','Legalsó sor magassága'),ALT('alt1','Legfelső sor magassága'),CNT('rows','Sorok száma',2),CNT('perRow','Pont soronként',2),PIT('pitch','Gimbal dőlés'),['photo','Fotó minden ponton','b'],SPD],
+  D:{look:0,width:40,alt0:15,alt1:60,rows:4,perRow:4,pitch:0,photo:true,speed:2},
+  gen:p=>{if(!(p.rows>=2&&p.perRow>=2&&p.width>0))return null;const pts=[];
+    for(let r=0;r<p.rows;r++){const h=lerp(p.alt0,p.alt1,r/(p.rows-1));
+      for(let j=0;j<p.perRow;j++){let f=j/(p.perRow-1);if(r%2)f=1-f;
+        const[x,y]=br((f-0.5)*p.width,p.look+90);
+        pts.push({x,y,h,yaw:p.look,pitch:p.pitch,action:p.photo?'PHOTO':'NONE'})}}
+    return{pts,note:p.rows+' sor × '+p.perRow+' pont.'}}},
+ dome:{name:'Félgömb (3D-modellhez)',desc:'Egymás feletti körök a pont körül, emelkedő magasságon, minden ponton fotóval és a kamera a tárgyra nézve – fotogrammetriához (3D-modell) használható. A kijelölt pont a tárgy közepe.',
+  F:[['R','Sugár a ponttól (m)','f'],['e0','Legalsó kör emelkedési szöge (°)','f'],['e1','Legfelső kör emelkedési szöge (°)','f'],CNT('rings','Körök száma',1),CNT('count','Fotó / kör',3),DIR('start','Kezdő irány'),['cw','Óramutató járásával megegyezően','b'],SPD,['poiH','A tárgy középmagassága (m)','f']],
+  D:{R:40,e0:15,e1:60,rings:3,count:16,start:0,cw:true,speed:3,poiH:10},
+  gen:p=>{if(!(p.R>0&&p.rings>=1&&p.count>=3))return null;
+    const d=p.cw?1:-1,pts=[];let lo=1e9,hi=-1e9;
+    for(let k=0;k<p.rings;k++){const el=p.rings>1?lerp(p.e0,p.e1,k/(p.rings-1)):p.e0,r=p.R*Math.cos(rad(el)),h=p.poiH+p.R*Math.sin(rad(el));
+      lo=Math.min(lo,h);hi=Math.max(hi,h);
+      for(let i=0;i<p.count;i++){const[x,y]=br(r,p.start+d*360*i/p.count);pts.push({x,y,h,track:true,action:'PHOTO'})}}
+    return{pts,note:pts.length+' fotó, magasság '+Math.round(lo)+'–'+Math.round(hi)+' m'+((lo<10||hi>120)?' <b style="color:var(--wa)">· a 10–120 m tartományon kívüli magasságok korlátozva lesznek!</b>':'')+'.'}}}
 };
 const rgAll={};Object.keys(PT).forEach(k=>rgAll[k]={...PT[k].D});
 let curType='orbit',curTpl=-1,rg=rgAll[curType],tpls=[];
