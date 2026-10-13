@@ -52,6 +52,8 @@ li span{flex:1}
 .pin.s{background:#e67e22;transform:scale(1.2)}
 .pin.v{width:14px;height:14px;background:#ff9800;font-size:0}
 .pin.h{background:#2563eb;border-radius:6px}
+.leaflet-tooltip.wtip{background:var(--pn);color:var(--ink);border:1px solid var(--ln);box-shadow:0 2px 8px #0006;padding:6px 9px;line-height:1.4;font-size:12px;white-space:nowrap}
+.leaflet-tooltip-top.wtip:before{border-top-color:var(--pn)}
 .darr{font-size:22px;line-height:22px;color:#ff9800;text-shadow:0 0 3px #000,0 0 3px #000;text-align:center;width:22px;height:22px}
 @media(max-width:800px){body{grid-template-columns:1fr;grid-template-rows:55vh auto;height:auto}#rz{display:none}aside{height:auto;border-top:1px solid var(--ln)}#map{height:55vh}}
 </style>
@@ -73,33 +75,29 @@ li span{flex:1}
 
 <div class="tabs" id="tabs">
   <button data-t="wp" class="on">Waypoint</button>
-  <button data-t="info">Pont adatai</button>
   <button data-t="ortho">Ortofotó</button>
   <button data-t="plan">Tervezett utak</button>
 </div>
 
 <div class="tab" id="tab-wp">
-  <p class="sub">Kattints a térképre új pont felvételéhez. A pontokat húzással mozgathatod. Egy meglévő pontra kattintva megnyílik a „Pont adatai” fül.</p>
+  <p class="sub">Kattints a térképre új pont felvételéhez. A pontokat húzással mozgathatod. Ha a kurzort egy pont fölé viszed, egy mini ablakban megjelennek a fontosabb adatai.</p>
   <div class="row"><button id="mPoi">POI pont hozzáadása</button></div>
   <p class="sub">POI: egy megfigyelt pont, amely felé a drón és a gimbal néz (Heading / Gimbal Tilt: POI). A POI-t a térképen húzhatod, jobb klikkel törölheted.</p>
 </div>
 
-<div class="tab" id="tab-info" hidden>
-  <p class="sub">A térképen kijelölt waypoint összes adata (az érvényben lévő értékekkel). Szürke: az adott beállítás nem aktív. Szerkeszteni lent, a „Kijelölt waypoint adatai” résznél lehet.</p>
-  <div class="kv" id="info"></div>
-</div>
-
 <div class="tab" id="tab-ortho" hidden>
-  <p class="sub">1. Kattints a térképen a terület sarkaira. 2. Állítsd be a repülési irányt és az átfedést – a narancs szaggatott vonal élőben mutatja a sorokat és a fotópontokat (zöld = kezdés, piros = vége, nyíl = irány). 3. Nyomd meg az „Útvonal generálása” gombot. Sarok törlése: jobb klikk / hosszú nyomás.</p>
+  <p class="sub">1. Jelöld ki a területet: <b>téglalap</b> (kattints az egyik sarokra, mozgasd a kurzort, kattints az átellenes sarokra) vagy <b>sokszög</b> (kattints a sarkokra). 2. Állítsd be a repülési irányt – akár egy kijelölt oldallal párhuzamosan – és az átfedést. A narancs szaggatott vonal élőben mutatja a sorokat és a fotópontokat (zöld = kezdés, piros = vége, nyíl = irány). 3. Nyomd meg az „Útvonal generálása” gombot. Sarok törlése: jobb klikk / hosszú nyomás.</p>
   <div class="row">
-    <button id="oDraw">Terület rajzolása</button>
+    <button id="oRect">Téglalap rajzolása</button>
+    <button id="oDraw">Sokszög rajzolása</button>
     <button id="oClr" class="del">Terület törlése</button>
   </div>
   <div class="sub" style="margin-top:8px"><b>Repülési irány</b> (az első sor iránya, É=0°, K=90°)</div>
   <div class="row compass" id="compass"></div>
   <div class="row">
+    <button id="oSide">Párhuzamos az oldallal</button>
     <button id="oDir">Irány kijelölése a térképen</button>
-    <button id="oAuto">Irány: leghosszabb oldal</button>
+    <button id="oAuto">Leghosszabb oldal</button>
   </div>
   <div class="grid" id="oform"></div>
   <div class="row">
@@ -253,19 +251,23 @@ map.on('click',e=>{
   if(tab=='plan'){ocen={lat,lng};drawOrbit();return}
   if(tab=='ortho'){
     if(dirMode){dirClick(lat,lng);return}
+    if(sideMode){sideClick(lat,lng);return}
+    if(rectMode){rectClick(lat,lng);return}
     if(polyMode){poly.push({lat,lng});drawPoly()}
     return;
   }
   if(poiMode){pois.push({height:35,lat,lng});poiMode=false;$('mPoi').classList.remove('on');drawAll();return}
   wps.push(newWp(lat,lng));sel=wps.length-1;drawAll();
 });
-map.on('mousemove',e=>{if(dirMode&&dirA)dirDraw(e.latlng)});
+map.on('mousemove',e=>{if(dirMode&&dirA)dirDraw(e.latlng);else if(rectMode&&rectA)rectDraw(e.latlng);else if(sideMode)sideHover(e.latlng)});
 
 function drawAll(){
   markers.forEach(m=>m.remove());markers=[];
   wps.forEach((w,i)=>{
     const m=L.marker([w.lat,w.lng],{draggable:true,icon:pin(i+1,i==sel?'s':'')}).addTo(map);
-    m.on('click',()=>{sel=i;setTab('info');drawAll()});
+    m.on('click',()=>{sel=i;drawAll()});
+    m.bindTooltip(()=>tipHtml(i),{direction:'top',offset:[0,-16],className:'wtip'});
+    m.on('dragstart',()=>m.closeTooltip());
     m.on('drag',e=>{const p=e.target.getLatLng();w.lat=p.lat;w.lng=p.lng;line.setLatLngs(wps.map(x=>[x.lat,x.lng]))});
     m.on('dragend',()=>{sel=i;drawAll()});
     markers.push(m);
@@ -344,7 +346,7 @@ function drawForms(){
       const def=d[0]=='poiIdx'?['poiIdx','POI pont','i','',pois.length?pois.map((q,i)=>[i,'POI '+(i+1)]):[[-1,'Nincs POI – előbb vegyél fel egyet']]]:d;
       const el=field(w,W,def,()=>{
         markers[sel].setLatLng([W.lat,W.lng]);
-        line.setLatLngs(wps.map(x=>[x.lat,x.lng]));drawList();drawInfo();
+        line.setLatLngs(wps.map(x=>[x.lat,x.lng]));drawList();
         if(def[4])drawForms();
       });
       if(off[d[0]])el.querySelector('input,select').disabled=true;
@@ -358,53 +360,32 @@ function drawForms(){
     const cap=document.createElement('div');cap.style.cssText='grid-column:1/-1;margin-top:6px;display:flex;justify-content:space-between;align-items:center';
     cap.innerHTML=`<b>POI ${i+1}</b>`;
     const bt=document.createElement('button');bt.textContent='Törlés';bt.className='del';bt.onclick=()=>removePoi(i);cap.appendChild(bt);h.appendChild(cap);
-    HF.forEach(d=>h.appendChild(field(h,p,d,()=>{poiMarkers[i]&&poiMarkers[i].setLatLng([p.lat,p.lng]);drawInfo()})));
+    HF.forEach(d=>h.appendChild(field(h,p,d,()=>{poiMarkers[i]&&poiMarkers[i].setLatLng([p.lat,p.lng])})));
   });
   $('hnote').textContent=pois.length?'':'Nincs POI. A Waypoint fülön a „POI pont hozzáadása” gombbal vehetsz fel, ha egy pontnál a drónnak vagy a gimbalnak egy pontra kell néznie.';
-  drawInfo();
 }
 
-// Kijelölt pont adatlapja (Pont adatai fül)
+// Mini ablak egy waypoint fölé vitt kurzornál
 function bearing(a,b){
   const kE=111320*Math.cos(a.lat*Math.PI/180),kN=110540;
   return (Math.atan2((b.lng-a.lng)*kE,(b.lat-a.lat)*kN)*180/Math.PI+360)%360;
 }
-function drawInfo(){
-  const el=$('info');if(!el)return;
-  if(sel<0||!wps[sel]){el.innerHTML='<div class="sep">Nincs kijelölt pont – kattints egy waypointra a térképen.</div>';return}
-  const W=norm(wps[sel]),R=[];
-  const add=(k,v,m)=>R.push(`<div class="k">${esc(k)}</div><div class="v${m?' m':''}">${v}</div>`);
-  const sep=t=>R.push(`<div class="sep">${esc(t)}</div>`);
-  sep('Pont');
-  add('Sorszám',`${sel+1} / ${wps.length}`);
-  add('Koordináta',W.lat.toFixed(6)+', '+W.lng.toFixed(6));
-  const off={speed:W.speedType!='DEFINE',yaw:W.yawType!='DEFINE',gimbalPitch:W.gimbalType!='DEFINE',zoomRatio:W.zoomType!='DEFINE'};
-  sep('Beállítások');
-  WUI.forEach(d=>{
-    const k=d[0];if(k=='lat'||k=='lng'||k=='poiIdx')return;
-    let v=W[k];
-    if(d[4]){const o=d[4].find(x=>String(x[0])==String(v));if(o)v=o[1]}
-    else if(k=='height')v=v+' m';else if(k=='speed')v=v+' m/s';else if(k=='yaw'||k=='gimbalPitch')v=v+'°';
-    else if(k=='zoomRatio')v=Number(v).toFixed(1)+'×';else if(k=='hoverTime')v=v+' s';
-    add(d[1].replace(/\s*\(.*?\)\s*/g,' ').trim()||d[1],esc(v),off[k]);
-  });
-  sep('Szakasz');
-  let cum=0;for(let i=1;i<=sel;i++)cum+=map.distance([wps[i-1].lat,wps[i-1].lng],[wps[i].lat,wps[i].lng]);
-  if(sel>0){
-    const p=wps[sel-1],d=map.distance([p.lat,p.lng],[W.lat,W.lng]);
-    add('Távolság az előzőtől',d.toFixed(1)+' m');
-    add('Irány az előzőtől',bearing(p,W).toFixed(0)+'°');
-    add('Magasságváltozás',(W.height-p.height>0?'+':'')+(W.height-p.height)+' m');
-  }else add('Az útvonal kezdőpontja','–',true);
-  add('Távolság a kezdéstől',Math.round(cum)+' m');
-  if(glob.speed>0){const t=cum/glob.speed;add('Elérés ideje (kb.)',Math.floor(t/60)+' perc '+Math.round(t%60)+' mp')}
-  if(W.poiType==1){
-    sep('POI');
-    add('POI koordináta',W.poiLat.toFixed(6)+', '+W.poiLng.toFixed(6));
-    add('POI magasság',W.poiHeight+' m');
-    add('Távolság a POI-tól',map.distance([W.lat,W.lng],[W.poiLat,W.poiLng]).toFixed(1)+' m');
-  }
-  el.innerHTML=R.join('');
+function optLabel(k,v){
+  const d=WUI.find(x=>x[0]==k),o=d&&d[4]&&d[4].find(x=>String(x[0])==String(v));
+  return o?o[1].replace(/\s*\(.*?\)\s*/g,' ').trim():String(v);
+}
+function tipHtml(i){
+  const w=wps[i];if(!w)return '';
+  const n=norm(w),R=[];
+  R.push(`<b>${i+1}. pont</b> · ${esc(optLabel('action',n.action))}`);
+  R.push(`Magasság: <b>${n.height} m</b> · Sebesség: <b>${n.speed} m/s</b>`);
+  R.push('Irány: '+(n.yawType=='DEFINE'?n.yaw+'°':esc(optLabel('yawType',n.yawType))));
+  R.push('Gimbal: '+(n.gimbalType=='DEFINE'?n.gimbalPitch+'°':'POI felé'));
+  if(n.hoverTime>0)R.push('Lebegés: '+n.hoverTime+' s');
+  let cum=0,seg=0;
+  for(let k=1;k<=i;k++){seg=map.distance([wps[k-1].lat,wps[k-1].lng],[wps[k].lat,wps[k].lng]);cum+=seg}
+  if(i>0)R.push(`Előzőtől: ${seg.toFixed(0)} m · Kezdéstől: ${Math.round(cum)} m`);
+  return R.join('<br>');
 }
 
 // Gombok
@@ -451,7 +432,7 @@ const OF=[['alt','Repülési magasság (10–120 m)','f','',null,{min:10,max:120
  ['revRows','Kezdés a másik oldalról (sorok sorrendje fordítva)','b'],['revDir','Első sor ellenkező irányba (kezdés a másik végén)','b'],
  ['allPts','Waypoint minden fotóponton','b']];
 const og={alt:60,speed:5,front:75,side:70,angle:0,pitch:-90,fov:84,photoAction:'PHOTO',pw:8192,ph:6144,allPts:true,revRows:false,revDir:false};
-let poly=[],polyMode=false,pm=[],dirMode=false,dirA=null;
+let poly=[],polyMode=false,pm=[],dirMode=false,dirA=null,rectMode=false,rectA=null,sideMode=false;
 const prev=L.layerGroup().addTo(map);
 const dirLayer=L.layerGroup().addTo(map);
 const polyLayer=L.polygon([],{color:'#ff9800',weight:3,fillOpacity:.12}).addTo(map);
@@ -500,7 +481,7 @@ function plan(){
 function ostat(){
   const r=plan(),el=$('ostat');if(!el)return;
   prev.clearLayers();updCompass();
-  const hint=dirMode?'<b>Irány kijelölése:</b> kattints a kiindulási pontra, majd arra, amerre repülni szeretnél.<br>':'';
+  const hint=dirMode?'<b>Irány kijelölése:</b> kattints a kiindulási pontra, majd arra, amerre repülni szeretnél.<br>':rectMode?'<b>Téglalap:</b> kattints az egyik sarokra, mozgasd a kurzort, majd kattints az átellenes sarokra.<br>':sideMode?(poly.length>=3?'<b>Oldal kiválasztása:</b> vidd a kurzort a kívánt oldalra (kiemelődik), és kattints – a sorok vele párhuzamosak lesznek.<br>':'<b>Előbb jelölj ki egy területet</b> (legalább 3 sarok).<br>'):'';
   if(r&&tab=='ortho'){
     L.polyline(r.ll,{color:'#ff9800',weight:2,dashArray:'6 6',interactive:false}).addTo(prev);
     if(r.ll.length<=400)r.ll.forEach(q=>L.circleMarker(q,{radius:3,color:'#ff9800',weight:1,fillOpacity:1,interactive:false}).addTo(prev));
@@ -522,15 +503,63 @@ function ostat(){
    `Fotóköz ${(r.ps/og.speed).toFixed(1)} s ennél a sebességnél; 2 s-os időzítéshez max. ${(r.ps/2).toFixed(1)} m/s<br>`+
    `${r.ll.length} waypoint lesz`+(og.alt>120?' <b style="color:var(--wa)">· 120 m fölötti magasság!</b>':'')+(t>1800?' <b style="color:var(--wa)">· hosszú, ellenőrizd az akkut!</b>':'');
 }
-function setOdraw(){$('oDraw').classList.toggle('on',polyMode);$('oDraw').textContent=polyMode?'Rajzolás kész':'Terület rajzolása'}
+function setOdraw(){
+  $('oDraw').classList.toggle('on',polyMode);$('oDraw').textContent=polyMode?'Sokszög: kész':'Sokszög rajzolása';
+  $('oRect').classList.toggle('on',rectMode);$('oRect').textContent=rectMode?'Téglalap… (mégse)':'Téglalap rajzolása';
+  $('oSide').classList.toggle('on',sideMode);$('oSide').textContent=sideMode?'Válassz oldalt… (mégse)':'Párhuzamos az oldallal';
+}
 function setOdir(){$('oDir').classList.toggle('on',dirMode);$('oDir').textContent=dirMode?'Irány kijelölése… (mégse)':'Irány kijelölése a térképen'}
-$('oDraw').onclick=()=>{polyMode=!polyMode;if(polyMode){dirMode=false;dirA=null;dirLayer.clearLayers();setOdir()}setOdraw();ostat()};
-$('oClr').onclick=()=>{poly=[];drawPoly()};
-$('oDir').onclick=()=>{
-  dirMode=!dirMode;dirA=null;dirLayer.clearLayers();
-  if(dirMode)polyMode=false;
+function modeOff(){polyMode=dirMode=rectMode=sideMode=false;dirA=rectA=null;dirLayer.clearLayers()}
+function setMode(m){
+  modeOff();
+  if(m=='poly')polyMode=true;else if(m=='rect')rectMode=true;else if(m=='side')sideMode=true;else if(m=='dir')dirMode=true;
   setOdraw();setOdir();ostat();
-};
+}
+$('oDraw').onclick=()=>setMode(polyMode?null:'poly');
+$('oRect').onclick=()=>setMode(rectMode?null:'rect');
+$('oSide').onclick=()=>setMode(sideMode?null:'side');
+$('oDir').onclick=()=>setMode(dirMode?null:'dir');
+$('oClr').onclick=()=>{poly=[];drawPoly()};
+// Téglalap: két átellenes sarok, a kurzor mozgatásakor élő előnézet
+function rectDraw(cur){
+  dirLayer.clearLayers();if(!rectA)return;
+  L.circleMarker([rectA.lat,rectA.lng],{radius:6,color:'#fff',weight:2,fillColor:'#ff9800',fillOpacity:1,interactive:false}).addTo(dirLayer);
+  if(cur){
+    const w=map.distance([rectA.lat,rectA.lng],[rectA.lat,cur.lng]),h=map.distance([rectA.lat,rectA.lng],[cur.lat,rectA.lng]);
+    L.rectangle([[rectA.lat,rectA.lng],[cur.lat,cur.lng]],{color:'#ff9800',weight:2,dashArray:'4 4',fillOpacity:.15,interactive:false})
+      .bindTooltip(Math.round(w)+' × '+Math.round(h)+' m',{permanent:true,direction:'center',className:'wtip'}).addTo(dirLayer);
+  }
+}
+function rectClick(lat,lng){
+  if(!rectA){rectA={lat,lng};rectDraw(null);return}
+  const A=rectA;
+  if(Math.abs(lat-A.lat)>1e-7&&Math.abs(lng-A.lng)>1e-7){
+    poly=[{lat:A.lat,lng:A.lng},{lat:A.lat,lng},{lat,lng},{lat,lng:A.lng}];
+  }
+  rectA=null;rectMode=false;dirLayer.clearLayers();setOdraw();drawPoly();
+}
+// Oldallal párhuzamos irány
+function nearestEdge(lat,lng){
+  if(poly.length<3)return null;
+  const kE=111320*Math.cos(lat*Math.PI/180),kN=110540,pr=p=>[(p.lng-lng)*kE,(p.lat-lat)*kN];
+  let best=null;
+  poly.forEach((p,i)=>{
+    const q=poly[(i+1)%poly.length],A=pr(p),B=pr(q),dx=B[0]-A[0],dy=B[1]-A[1],l2=dx*dx+dy*dy;
+    const t=l2?Math.max(0,Math.min(1,-(A[0]*dx+A[1]*dy)/l2)):0,d=Math.hypot(A[0]+t*dx,A[1]+t*dy);
+    if(!best||d<best.d)best={i,d,p,q};
+  });
+  best.ang=bearing(best.p,best.q)%180;
+  return best;
+}
+function sideHover(ll){
+  dirLayer.clearLayers();const e=nearestEdge(ll.lat,ll.lng);if(!e)return;
+  L.polyline([[e.p.lat,e.p.lng],[e.q.lat,e.q.lng]],{color:'#00c853',weight:7,opacity:.9,interactive:false})
+    .bindTooltip('Irány: '+e.ang.toFixed(1)+'°',{permanent:true,direction:'top',className:'wtip'}).addTo(dirLayer);
+}
+function sideClick(lat,lng){
+  const e=nearestEdge(lat,lng);if(!e)return;
+  og.angle=Math.round(e.ang*10)/10;sideMode=false;dirLayer.clearLayers();setOdraw();drawForms();
+}
 function dirDraw(cur){
   dirLayer.clearLayers();if(!dirA)return;
   L.circleMarker([dirA.lat,dirA.lng],{radius:6,color:'#fff',weight:2,fillColor:'#00c853',fillOpacity:1,interactive:false}).addTo(dirLayer);
@@ -618,11 +647,10 @@ $('rGen').onclick=()=>{
 
 // Fülek
 function setTab(t){
-  tab=t;['wp','info','ortho','plan'].forEach(k=>{$('tab-'+k).hidden=k!=t});
+  tab=t;['wp','ortho','plan'].forEach(k=>{$('tab-'+k).hidden=k!=t});
   document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t==t));
   poiMode=false;$('mPoi').classList.remove('on');
-  polyMode=(t=='ortho');dirMode=false;dirA=null;dirLayer.clearLayers();setOdir();setOdraw();ostat();ostat2();
-  if(t=='info')drawInfo();
+  modeOff();polyMode=(t=='ortho');setOdir();setOdraw();ostat();ostat2();
 }
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>setTab(b.dataset.t));
 
