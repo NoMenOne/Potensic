@@ -35,7 +35,13 @@ Az appban a waypointokat telefonon kell kézzel kirakosgatni. Ez az eszköz enn�
 1. Töltsd le a `potensic_waypoint_editor.html` fájlt, és nyisd meg böngészőben (dupla kattintás).
 2. **Internetkapcsolat kell**: a térképcsempék (Esri World Imagery, OpenStreetMap), valamint a Leaflet és a JSZip könyvtár (cdnjs) online töltődik be.
 3. Tervezd meg az útvonalat (lásd lent), majd a **Mentés** szakaszban nyomd meg a **Mappa letöltése (ZIP)** gombot.
-4. A kapott mappát másold az app küldetés-könyvtárába. A pontos hely a készüléktől függ.
+4. Csatlakoztasd a vezérlőt a számítógéphez USB-n, és másold a kapott mappát az app küldetés-könyvtárába:
+
+   ```
+   Ez a gép\PTD 2\Internal shared storage\Android\data\com.ipotensic.atom\files\Waypoint
+   ```
+
+   Az Android-eszközön ez a `/Android/data/com.ipotensic.atom/files/Waypoint` mappa (PTD 2 képernyős vezérlő, `com.ipotensic.atom` app). Másolás előtt nézd meg, hogyan tárolja az app a saját küldetéseit (külön mappa küldetésenként, vagy közvetlenül a fájlok), és ahhoz igazítsd a mentett mappát.
 
 Ajánlott böngésző: Chrome vagy Edge. Más böngészőben a ZIP-letöltés is működik. A **Mentés mappába** gomb (közvetlen mappaírás) csak a File System Access API-t támogató böngészőkben jelenik meg (számítógépes Chrome/Edge).
 
@@ -98,7 +104,7 @@ A **Mentés mappába** gomb ugyanezt a három fájlt egy általad választott he
 
 A mentés előtt az oldal ellenőrzi és igazítja az értékeket: sebesség 0,5–10 m/s, globális magasság 10–120 m, és hibát ad, ha van POI módú pont POI nélkül.
 
-> A mappanév, a fájlnevek és az időbélyeg-kapcsolat az app saját mintafájljaiból következtetett. Az app pontos fájlelhelyezési szabályát nem ismerjük.
+> A mappanév, a fájlnevek és az időbélyeg-kapcsolat az app saját mintafájljaiból következtetett. A célmappa ismert (lásd a Használat szakaszt), de azt, hogy az app a `Waypoint` mappában küldetésenként almappát használ-e, még nem erősítettük meg.
 
 ---
 
@@ -207,7 +213,7 @@ A pontok a kör mentén egyenletesen oszlanak: `szög = kezdő_irány ± 360° �
 - **A fájlformátum visszafejtett.** Csak a mintafájlokban látott értékek szerepelnek a listákban. A Heading és a Gimbal Tilt **Manual** értéke ismeretlen. Ha betöltesz ilyen értéket tartalmazó fájlt, az oldal „ismeretlen érték" megjegyzéssel megőrzi és változatlanul visszaírja.
 - **Üres POI-lista:** ha nincs POI, a második tömb `[]`. Nem ismert, hogy az app elfogadja-e. Az app mintafájljaiban mindig volt legalább egy elem.
 - **Waypoint-limit:** az app maximális pontszáma nem ismert. Az ortofotó könnyen több száz pontot generál. Nagy területnél érdemes kisebb tesztterülettel kezdeni.
-- **Fájlelhelyezés és párosítás:** nem ismert, milyen mappába kell másolni a mentett mappát, és hogy az app a küldetést a kép időbélyege szerint párosítja-e a küldetésfájllal. Az oldal az app mintafájljait utánozza (a küldetésfájl időbélyege kicsit későbbi a képénél). **Nyitott kérdés**, hogy egy generált küldetést a készülék minden esetben megjelenít-e.
+- **Fájlelhelyezés és párosítás:** a célmappa a `Waypoint` (lásd fent), de az almappa-szerkezet nem megerősített, és az sem, hogy az app a küldetést a kép időbélyege szerint párosítja-e a küldetésfájllal. Az oldal az app mintafájljait utánozza (a küldetésfájl időbélyege kicsit későbbi a képénél). **Nyitott kérdés**, hogy egy generált küldetést a készülék minden esetben megjelenít-e.
 - **`PHOTO` viselkedés:** nem ismert, hogy a drón megáll-e a `PHOTO` pontnál. Ha kell, a lebegési időt (`hoverTime`) pontonként be lehet állítani.
 - **Reverse Flight** (`isOrder: false`): az oldal csak a beállítást menti, az útvonal előnézetét és a becsült időt továbbra is előre iránnyal mutatja.
 - **Kamera adatai:** az alapértékek (84°, 8192×6144) a gyártói adatlapok alapján vannak megadva, ellenőrizd őket.
